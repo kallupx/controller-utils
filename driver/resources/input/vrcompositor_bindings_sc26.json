@@ -1,7 +1,7 @@
 {
   "action_manifest_version": 0,
   "app_key": "openvr.component.vrcompositor",
-  "controller_type": "controllertracking_sc26",
+  "controller_type": "controllerutils_sc26",
   "category": "steamvr_input",
   "name": "Controller Utils native dashboard pointer",
   "description": "Active only while Controller Utils owns the available right-hand role.",

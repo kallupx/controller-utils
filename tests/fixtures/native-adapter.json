@@ -2,8 +2,8 @@
   "version": 2,
   "control": 54787936,
   "cave": 51751856,
-  "library_path": "/var/lib/controllertracking/native-tracker/libnative_tracker.so",
-  "loader_sha256": "5df4e3f709a59c945900cfb4742dbb2533502d9635ab179d02a732451847ebd6",
+  "library_path": "/var/lib/controller-utils/native-tracker/libnative_tracker.so",
+  "loader_sha256": "479d587672a97e1a362401f60b9dff6244e4c58d9da6c2204226e35a3e006976",
   "library_sha256": "581012e0cd431bf7c41ce3544fe4de3146bedcee08aeb9796482f8e3ca5d8fdc",
   "sites": [
     {

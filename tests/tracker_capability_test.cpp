@@ -28,8 +28,8 @@ static int capability_clock_gettime(clockid_t clock, timespec *stamp) {
 }
 
 static int capability_open(const char *path, int flags) {
-    return ::open(std::strcmp(path, "/run/controllertracking-native-tracker") ? path
-                                                                              : directory.c_str(),
+    return ::open(std::strcmp(path, "/run/controller-utils-native-tracker") ? path
+                                                                            : directory.c_str(),
                   flags);
 }
 static int capability_fstat(int fd, struct stat *info) {

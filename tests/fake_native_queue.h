@@ -24,8 +24,8 @@ struct Clock {
 };
 class Queue final : public BlockQueue {
   public:
-    std::map<std::string, uint64_t> paths{{"/controllertracking/native/input_v1", 1},
-                                          {"/controllertracking/native/status_v1", 2},
+    std::map<std::string, uint64_t> paths{{"/controller-utils/native/input_v1", 1},
+                                          {"/controller-utils/native/status_v1", 2},
                                           {"/xrservice/controller_16/pose", 3},
                                           {"/xrservice/controller/data", 4},
                                           {"/xrservice/controller/event", 5}};

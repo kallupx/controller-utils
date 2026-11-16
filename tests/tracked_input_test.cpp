@@ -29,7 +29,7 @@ struct Fixture {
 int main() {
     Fixture f;
     f.check_released();
-    assert(f.host.serial == "controllertracking-sc26-input-TEST1234");
+    assert(f.host.serial == "controllerutils-sc26-input-TEST1234");
     assert(f.device.register_device("TEST1234") && !f.device.register_device("OTHER123"));
     assert(f.host.adds == 1);
     assert(vr::CVRPropertyHelpers(&f.properties)
@@ -37,7 +37,7 @@ int main() {
     vr::ETrackedPropertyError model_error;
     assert(vr::CVRPropertyHelpers(&f.properties)
                .GetStringProperty(110, vr::Prop_RenderModelName_String, &model_error) ==
-           "{controllertracking_native}sc26_input");
+           "{controllerutils_native}sc26_input");
     assert(model_error == vr::TrackedProp_Success);
     assert(std::abs(f.input.tip.m[1][3] + .001f) < 1e-7 &&
            std::abs(f.input.tip.m[2][3] + .006f) < 1e-7);

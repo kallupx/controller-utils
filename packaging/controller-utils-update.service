@@ -4,8 +4,8 @@ Before=steamvr.service
 
 [Service]
 Type=oneshot
-ExecStartPre=/usr/bin/sudo -n /var/lib/controllertracking/controller-utils-updater --repair
-ExecStart=/usr/bin/sudo -n /var/lib/controllertracking/controller-utils-updater --apply
+ExecStartPre=/usr/bin/sudo -n /var/lib/controller-utils/controller-utils-updater --repair
+ExecStart=/usr/bin/sudo -n /var/lib/controller-utils/controller-utils-updater --apply
 TimeoutStartSec=180
 
 [Install]

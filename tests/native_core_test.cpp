@@ -176,7 +176,7 @@ int main() {
     auto connection = bridge_event(true, 0x47, profile, profile);
     std::string serial;
     assert(wire::event(connection, serial));
-    assert(serial == "controllertracking-sc26-TEST1234");
+    assert(serial == "controllerutils-sc26-TEST1234");
     auto imu = bridge_imu(10, {0, 9.80665, 0}, {});
     assert(wire::imu(imu, 10, 9));
     auto input = bridge_input(10, 10.1, std::nullopt, {}, false);

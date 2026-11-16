@@ -62,7 +62,7 @@ struct Fixture {
                          R"({"url":"https://updates.example.test/stable/"})", 0644);
         ct::atomic_write(app / "assets/tracking-calibration.json", "private calibration", 0644);
         ct::atomic_write(data / "calibrations/controller.json", "current calibration", 0600);
-        ct::atomic_write(app / "controllertracking.vrmanifest", "private registration", 0644);
+        ct::atomic_write(app / "controller-utils.vrmanifest", "private registration", 0644);
         ct::save_settings(data / "settings.json", {});
         application = std::make_unique<ct::ApplicationLock>(data / "app.lock");
         maintenance = std::make_unique<u::MaintenanceLock>(data);
@@ -106,7 +106,7 @@ struct Fixture {
         assert(ct::read_file(app / "controller-utils", 128) == "previous-native-program");
         assert(ct::read_file(app / "assets/tracking-calibration.json", 128) ==
                "private calibration");
-        assert(ct::read_file(app / "controllertracking.vrmanifest", 128) == "private registration");
+        assert(ct::read_file(app / "controller-utils.vrmanifest", 128) == "private registration");
         assert(ct::load_settings(data / "settings.json").brightness == 100);
     }
     ~Fixture() {

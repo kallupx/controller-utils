@@ -62,7 +62,7 @@ TrackingSession::TrackingSession(RuntimeView &runtime, std::shared_ptr<Controlle
         update_options(options_);
         started_ = last_imu_ = monotonic_();
         helper_ = children_({"/usr/bin/sudo", "-n",
-                             "/var/lib/controllertracking/controller-utils-helper", "--private"});
+                             "/var/lib/controller-utils/controller-utils-helper", "--private"});
         if (!helper_)
             throw std::runtime_error("Native compatibility helper could not start.");
         try {

@@ -53,7 +53,7 @@ For an existing installation, use updates or uninstall before installing again.
 | View + Menu, hold 1 second then release | Realign heading |
 | View + Menu, hold 5 seconds | Restart tracking |
 | Steam + X | Open the keyboard |
-| Steam + R1 | Take a native screenshot |
+| Steam + R1 | Take a screenshot |
 | Steam, hold 1 second then release | Recenter the view |
 | Steam, double press | Toggle passthrough |
 
@@ -72,11 +72,15 @@ and permission repairs run without another password prompt.
 To uninstall, run:
 
 ```sh
-~/.local/share/controllertracking/app/uninstall.sh
+~/.local/share/controller-utils/app/uninstall.sh
 ```
 
 Removal asks for administrator access. Updates and removal keep settings and
-per-controller calibration in `~/.local/share/controllertracking/app-data`.
+per-controller calibration in `~/.local/share/controller-utils/app-data`.
+
+For installations using the old `controllertracking` directory, uninstall with
+`~/.local/share/controllertracking/app/uninstall.sh`, then run the install command
+above. The installer moves the saved settings and calibration to the new directory.
 
 ## Build
 

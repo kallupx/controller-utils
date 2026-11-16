@@ -7,19 +7,19 @@ umask 077
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 [ "$(id -un)" = steamos ] && [ "$(id -u)" = 1000 ] || fail 'Run this uninstaller as steamos, without sudo.'
 [ "$#" = 0 ] || fail 'Usage: ./uninstall.sh'
-base=$HOME/.local/share/controllertracking
+base=$HOME/.local/share/controller-utils
 [ -d "$base/app" ] && [ ! -L "$base/app" ] || fail 'Controller Utils is not installed.'
 [ "$(readlink "$base/native-driver")" = app/native-driver ] || fail 'The installed driver path needs review before removal.'
 [ -x /opt/steamvr/bin/linuxarm64/vrpathreg ] || fail 'The SteamVR driver registration tool is missing.'
 sudo -v || fail 'Authentication is required to uninstall Controller Utils.'
 systemctl --user is-active --quiet steamvr.service || fail 'Start SteamVR before uninstalling so its app registration can be removed.'
 [ "$(systemctl --user show steamvr.service -p LoadState --value)" != masked ] || fail 'SteamVR is masked. Unmask it before uninstalling.'
-processes=$(pgrep -u 1000 -f '^/home/steamos/.local/share/controllertracking/app/controller-utils( |$)' || true)
+processes=$(pgrep -u 1000 -f '^/home/steamos/.local/share/controller-utils/app/controller-utils( |$)' || true)
 if [ -n "$processes" ]
 then
     kill -TERM $processes
     attempts=0
-    while pgrep -u 1000 -f '^/home/steamos/.local/share/controllertracking/app/controller-utils( |$)' >/dev/null
+    while pgrep -u 1000 -f '^/home/steamos/.local/share/controller-utils/app/controller-utils( |$)' >/dev/null
     do
         attempts=$((attempts + 1))
         [ "$attempts" -lt 50 ] || fail 'Controller Utils is still closing. Try again shortly.'
@@ -44,7 +44,7 @@ systemctl --user mask --runtime steamvr.service
 systemctl --user stop steamvr.service
 exec 9<> "$base/app-data/app.lock"
 flock -n 9 || fail 'Close Controller Utils before uninstalling.'
-sudo /var/lib/controllertracking/controller-utils-updater --uninstall
+sudo /var/lib/controller-utils/controller-utils-updater --uninstall
 /opt/steamvr/bin/linuxarm64/vrpathreg removedriver "$base/native-driver"
 systemctl --user disable controller-utils-update.service
 rm -- "$HOME/.local/share/systemd/user/controller-utils-update.service"

@@ -275,15 +275,15 @@ function harness() {
 {
     const h = harness(), input = h.mountKeyboard();
     h.renew(false, {typing : true, touches : 2, held : false});
-    const watch = h.context.__controllertrackingKeyboardWatchV1;
+    const watch = h.context.__controllerutilsKeyboardWatchV1;
     h.renew(false,
             {keyboard : true, actionOnly : true, serial : 'keyboard-shortcut', owner : 'shortcut'});
-    assert.equal(h.context.__controllertrackingKeyboardWatchV1, watch);
+    assert.equal(h.context.__controllerutilsKeyboardWatchV1, watch);
     assert.deepEqual(h.keyboard, [ 'show' ]);
     h.keyboard.length = 0;
     h.advance(1001);
     assert.equal(input.m_AnalogCallbacks.listeners.size, 0);
-    assert.equal(h.context.__controllertrackingKeyboardWatchV1, undefined);
+    assert.equal(h.context.__controllerutilsKeyboardWatchV1, undefined);
     assert.deepEqual(h.keyboard, []);
     for (const changed
              of [{typing : 1}, {typing : true}, {touches : 4}, {touches : .5}, {held : 1}])
@@ -333,7 +333,7 @@ function harness() {
 {
     const h = harness();
     h.renew();
-    const lease = h.context.__controllertrackingInputFilterV1;
+    const lease = h.context.__controllerutilsInputFilterV1;
     h.advance(500);
     assert.equal(h.renew(false, {
                       keyboard : true,
@@ -343,7 +343,7 @@ function harness() {
                   }).active,
                  false);
     assert.deepEqual(h.keyboard, [ 'show' ]);
-    assert.equal(h.context.__controllertrackingInputFilterV1, lease);
+    assert.equal(h.context.__controllerutilsInputFilterV1, lease);
     h.button(true, 1);
     h.button(false, 1);
     assert.equal(h.delivered.length, 0);
@@ -387,7 +387,7 @@ function harness() {
 {
     const h = harness();
     h.renew();
-    const lease = h.context.__controllertrackingInputFilterV1;
+    const lease = h.context.__controllerutilsInputFilterV1;
     const target = 'gamescope.gamescope-0.window.62';
     h.context.vrGamepadInput = {
         FocusedVROverlayOwnedBySteam : false,
@@ -399,7 +399,7 @@ function harness() {
     assert.equal(result.keyboardOverlay, target);
     assert.equal(result.active, false);
     assert.deepEqual(h.keyboard, []);
-    assert.equal(h.context.__controllertrackingInputFilterV1, lease);
+    assert.equal(h.context.__controllerutilsInputFilterV1, lease);
     h.renew(false);
 }
 
@@ -519,7 +519,7 @@ function harness() {
     assert.equal(Object.hasOwn(h.nav, "OnButtonActionInternal"), true);
     h.advance(100);
     assert.equal(Object.hasOwn(h.nav, "OnButtonActionInternal"), false);
-    assert.equal(h.context.__controllertrackingInputFilterV1, undefined);
+    assert.equal(h.context.__controllerutilsInputFilterV1, undefined);
 }
 {
     const h = harness();

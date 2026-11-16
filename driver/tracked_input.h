@@ -148,12 +148,12 @@ class TrackedInput final : public vr::ITrackedDeviceServerDriver {
     }
     bool register_device(const std::string &actual_serial) {
         if (registered)
-            return serial == "controllertracking-sc26-input-" + actual_serial;
+            return serial == "controllerutils-sc26-input-" + actual_serial;
         if (actual_serial.size() < 8 || actual_serial.size() > 19 ||
             !std::all_of(actual_serial.begin(), actual_serial.end(),
                          [](char c) { return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'); }))
             throw std::invalid_argument("invalid native input serial");
-        serial = "controllertracking-sc26-input-" + actual_serial;
+        serial = "controllerutils-sc26-input-" + actual_serial;
         registered =
             host->TrackedDeviceAdded(serial.c_str(), vr::TrackedDeviceClass_Controller, this);
         return registered;
@@ -165,20 +165,20 @@ class TrackedInput final : public vr::ITrackedDeviceServerDriver {
             property(properties.SetStringProperty(container, vr::Prop_SerialNumber_String,
                                                   serial.c_str()));
             property(properties.SetStringProperty(container, vr::Prop_TrackingSystemName_String,
-                                                  "controllertracking_native"));
+                                                  "controllerutils_native"));
             property(properties.SetStringProperty(container, vr::Prop_ModelNumber_String,
                                                   "Steam Controller (2026) tracking"));
             // Steam replaces an empty name with generic_controller, this valid zero-area mesh draws
             // nothing.
             property(properties.SetStringProperty(container, vr::Prop_RenderModelName_String,
-                                                  "{controllertracking_native}sc26_input"));
+                                                  "{controllerutils_native}sc26_input"));
             property(properties.SetStringProperty(container, vr::Prop_ManufacturerName_String,
                                                   "Controller Utils"));
             property(properties.SetStringProperty(container, vr::Prop_ControllerType_String,
-                                                  "controllertracking_sc26"));
-            property(properties.SetStringProperty(
-                container, vr::Prop_InputProfilePath_String,
-                "{controllertracking_native}/input/sc26_profile.json"));
+                                                  "controllerutils_sc26"));
+            property(
+                properties.SetStringProperty(container, vr::Prop_InputProfilePath_String,
+                                             "{controllerutils_native}/input/sc26_profile.json"));
             property(properties.SetInt32Property(container, vr::Prop_ControllerRoleHint_Int32,
                                                  vr::TrackedControllerRole_OptOut));
             property(properties.SetInt32Property(

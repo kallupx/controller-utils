@@ -15,14 +15,26 @@ fi
 [ "$#" = 1 ] || fail 'Usage: ./install.sh [--cleanup] DIRECTORY_WITH_RELEASE_FILES'
 feed=$(realpath -e -- "$1")
 source_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-base=$HOME/.local/share/controllertracking
+base=$HOME/.local/share/controller-utils
 [ ! -e "$base/app" ] && [ ! -L "$base/app" ] || fail 'Controller Utils is already installed. Use its updates or uninstall it first.'
 [ ! -e "$base/controller-utils" ] && [ ! -L "$base/controller-utils" ] || fail 'An existing Controller Utils launcher needs review before installation.'
 [ ! -e "$base/native-driver" ] && [ ! -L "$base/native-driver" ] || fail 'An existing Controller Utils driver needs review before installation.'
+legacy=$HOME/.local/share/controllertracking
+for path in "$legacy/app" "$legacy/controller-utils" "$legacy/native-driver" /var/lib/controllertracking
+do
+    [ ! -e "$path" ] && [ ! -L "$path" ] || fail "Uninstall the previous version first: $legacy/app/uninstall.sh"
+done
 [ -x /opt/steamvr/bin/linuxarm64/vrpathreg ] || fail 'The SteamVR driver registration tool is missing.'
-mkdir -p "$base/app-data"
 service=$HOME/.local/share/systemd/user/controller-utils-update.service
 [ ! -e "$service" ] && [ ! -L "$service" ] || fail 'An existing update service needs review before installation.'
+if [ -e "$legacy/app-data" ] || [ -L "$legacy/app-data" ]
+then
+    [ -d "$legacy" ] && [ ! -L "$legacy" ] && [ -d "$legacy/app-data" ] && [ ! -L "$legacy/app-data" ] || fail 'The previous settings directory needs review before installation.'
+    [ ! -e "$base/app-data" ] && [ ! -L "$base/app-data" ] || fail 'Both old and new settings directories exist. Preserve and review them before installing.'
+    mkdir -p "$base"
+    mv -T -- "$legacy/app-data" "$base/app-data"
+fi
+mkdir -p "$base/app-data"
 work=$(mktemp -d "$base/.install.XXXXXXXX")
 resume=false
 masked=false
@@ -33,7 +45,7 @@ service_installed=false
 driver_added=false
 native_installed=false
 native_preexisting=false
-[ ! -x /var/lib/controllertracking/controller-utils-updater ] || native_preexisting=true
+[ ! -x /var/lib/controller-utils/controller-utils-updater ] || native_preexisting=true
 cleanup() {
     status=$?
     trap - EXIT

@@ -45,7 +45,7 @@ PACKAGE_FILES = (
 
 DRIVER_FILES = (
     "driver.vrdrivermanifest",
-    "bin/linuxarm64/driver_controllertracking_native.so",
+    "bin/linuxarm64/driver_controllerutils_native.so",
     "resources/input/sc26_profile.json",
     "resources/input/vrcompositor_bindings_sc26.json",
     "resources/rendermodels/sc26_input/sc26_input.obj",

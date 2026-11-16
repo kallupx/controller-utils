@@ -266,7 +266,7 @@ struct Applications : IVRApplications {
     }
     EVRApplicationError IdentifyApplication(uint32_t unProcessId, const char *pchAppKey) override {
         if (unProcessId != uint32_t(getpid()) ||
-            std::strcmp(pchAppKey, "org.controllertracking.frame") ||
+            std::strcmp(pchAppKey, "org.controllerutils.frame") ||
             std::getenv("CT_TEST_OPENVR_IDENTIFY_FAILURE"))
             return VRApplicationError_UnknownApplication;
         ++identified;

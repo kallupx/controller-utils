@@ -1,5 +1,5 @@
 {
-  "name": "controllertracking_native",
+  "name": "controllerutils_native",
   "alwaysActivate": true,
   "resourceOnly": false
 }

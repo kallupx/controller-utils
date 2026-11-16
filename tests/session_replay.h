@@ -111,7 +111,7 @@ class Runtime final : public ct::RuntimeView {
         return {{3, 2, true, 200}};
     }
     std::string serial(uint32_t index) override {
-        return index == 0 ? "HEADSET" : "controllertracking-sc26-input-TEST1234";
+        return index == 0 ? "HEADSET" : "controllerutils-sc26-input-TEST1234";
     }
     std::optional<ct::RigidPose> head_pose(int = 1) override {
         return awake ? std::optional<ct::RigidPose>(head) : std::nullopt;

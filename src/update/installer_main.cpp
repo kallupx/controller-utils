@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
         if (!user || user->pw_uid != 1000 || (caller && std::string(caller) != "1000"))
             throw std::runtime_error("Unexpected Frame application owner");
         const std::filesystem::path base =
-            std::filesystem::path(user->pw_dir) / ".local/share/controllertracking";
+            std::filesystem::path(user->pw_dir) / ".local/share/controller-utils";
         const ct::update::UpdateInstallation installation{{base / "app"},
                                                           base / "app-data",
                                                           "/var/lib/controller-utils-updates",

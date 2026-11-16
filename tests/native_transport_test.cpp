@@ -160,7 +160,7 @@ int main() {
         Queue queue;
         Clock clock;
         ct::QueueContext context(queue);
-        queue.connect_errors["/controllertracking/native/input_v1"] = 7;
+        queue.connect_errors["/controller-utils/native/input_v1"] = 7;
         queue.partial_connect = true;
         rejects([&] { context.command_writer(); }, "Native queue");
         assert((queue.destroyed == std::vector<uint64_t>{1}));

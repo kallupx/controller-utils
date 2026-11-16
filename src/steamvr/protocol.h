@@ -102,9 +102,10 @@ inline bool config(const char *data, uint32_t size, bool is_default, std::string
         valid = value && json_object_is_type(value, json_type_string);
         if (valid) {
             const char *text = json_object_get_string(value);
-            valid = json_object_get_string_len(value) <= 96 &&
-                    size_t(json_object_get_string_len(value)) == std::strlen(text) &&
-                    !std::strncmp(text, "controllertracking-sc26-", 24);
+            valid =
+                json_object_get_string_len(value) <= 96 &&
+                size_t(json_object_get_string_len(value)) == std::strlen(text) &&
+                !std::strncmp(text, "controllerutils-sc26-", sizeof("controllerutils-sc26-") - 1);
             if (valid)
                 serial = text;
         }

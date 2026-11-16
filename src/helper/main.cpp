@@ -36,7 +36,7 @@ void preflight(int argc, char **argv) {
         if (!S_ISFIFO(info.st_mode) || info.st_uid != 1000)
             throw std::runtime_error("Use the installed Controller Utils application.");
     }
-    ct::ProtectedDirectory directory("/var/lib/controllertracking");
+    ct::ProtectedDirectory directory("/var/lib/controller-utils");
     const auto file = directory.file("controller-utils-helper", 20 * 1024 * 1024);
     struct stat pinned{}, running{};
     check(fstat(file.get(), &pinned), "verify installed native helper");

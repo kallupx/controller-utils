@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT = "controller-utils-fixture-linuxarm64.tar.gz"
 DRIVER_FILES = (
     "driver.vrdrivermanifest",
-    "bin/linuxarm64/driver_controllertracking_native.so",
+    "bin/linuxarm64/driver_controllerutils_native.so",
     "resources/input/sc26_profile.json",
     "resources/input/vrcompositor_bindings_sc26.json",
     "resources/rendermodels/sc26_input/sc26_input.obj",
@@ -143,7 +143,7 @@ class NativeUpdateClientTest(unittest.TestCase):
         (self.root / "assets/update-public.pem").write_bytes(self.public)
         (self.root / "assets/update-channel.json").write_text(json.dumps({"url": self.channel}))
         (self.root / "assets/tracking-calibration.json").write_bytes(b"private calibration")
-        (self.root / "controllertracking.vrmanifest").write_text("private registration")
+        (self.root / "controller-utils.vrmanifest").write_text("private registration")
         self.server.requests.clear()
         self.server.hold = None
         self.server.held.clear()

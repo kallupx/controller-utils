@@ -15,7 +15,7 @@ inline constexpr size_t MaxArchive = 128 * 1024 * 1024;
 inline constexpr size_t MaxContents = 256 * 1024 * 1024;
 inline constexpr size_t MaxMetadata = 65536;
 inline constexpr std::array<const char *, 5> DriverFiles{
-    "driver.vrdrivermanifest", "bin/linuxarm64/driver_controllertracking_native.so",
+    "driver.vrdrivermanifest", "bin/linuxarm64/driver_controllerutils_native.so",
     "resources/input/sc26_profile.json", "resources/input/vrcompositor_bindings_sc26.json",
     "resources/rendermodels/sc26_input/sc26_input.obj"};
 inline constexpr std::array<const char *, 1> RuntimeFiles{"XRService"};

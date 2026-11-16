@@ -3,7 +3,7 @@
 #include <openvr.h>
 
 namespace ct {
-inline constexpr char ApplicationKey[] = "org.controllertracking.frame";
+inline constexpr char ApplicationKey[] = "org.controllerutils.frame";
 class ApplicationRegistration {
     vr::IVRApplications &api_;
 

@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
             std::cerr << "Controller Utils runtime: " << error.what() << '\n';
         }
         ct::Runtime runtime(true);
-        if (std::filesystem::exists(root / "controllertracking.vrmanifest")) {
+        if (std::filesystem::exists(root / "controller-utils.vrmanifest")) {
             auto &api =
                 *static_cast<vr::IVRApplications *>(runtime.interface(vr::IVRApplications_Version));
             if (!api.IsApplicationInstalled(ct::ApplicationKey)) {

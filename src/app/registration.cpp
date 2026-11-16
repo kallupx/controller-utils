@@ -13,8 +13,8 @@
 
 namespace ct {
 namespace {
-constexpr char ManifestName[] = "controllertracking.vrmanifest";
-constexpr char DesktopName[] = "org.controllertracking.frame.desktop";
+constexpr char ManifestName[] = "controller-utils.vrmanifest";
+constexpr char DesktopName[] = "org.controllerutils.frame.desktop";
 struct Saved {
     std::optional<std::string> bytes;
     mode_t mode = 0644;
@@ -85,7 +85,7 @@ void text(json_object *object, const char *name, const std::string &value) {
 }
 std::string manifest(const std::filesystem::path &root) {
     json::Value value(json_object_new_object());
-    text(value.get(), "source", "controllertracking");
+    text(value.get(), "source", "controllerutils");
     auto entries = json_object_new_array();
     auto app = json_object_new_object();
     json_object_array_add(entries, app);
@@ -110,7 +110,7 @@ void owned_manifest(const Saved &saved, const std::filesystem::path &root) {
         return;
     auto value = json::parse(*saved.bytes);
     const auto entries = json::field(value.get(), "applications");
-    if (json::string(json::field(value.get(), "source")) != "controllertracking" ||
+    if (json::string(json::field(value.get(), "source")) != "controllerutils" ||
         json::array_size(entries) != 1 ||
         json::string(json::field(json::item(entries, 0), "app_key")) != ApplicationKey ||
         json::string(json::field(json::item(entries, 0), "binary_path_linux")) !=

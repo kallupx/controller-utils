@@ -163,10 +163,9 @@ int main() {
     unsigned launches = 0;
     ChildFactory runner = [&](const std::vector<std::string> &command) {
         ++launches;
-        assert((command ==
-                std::vector<std::string>{"/usr/bin/sudo", "-n",
-                                         "/var/lib/controllertracking/controller-utils-updater",
-                                         "--repair"}));
+        assert((command == std::vector<std::string>{
+                               "/usr/bin/sudo", "-n",
+                               "/var/lib/controller-utils/controller-utils-updater", "--repair"}));
         return std::make_unique<FakeChild>();
     };
     assert(launches == 0);
@@ -178,7 +177,7 @@ int main() {
         ++launches;
         assert((command ==
                 std::vector<std::string>{"/usr/bin/sudo", "-n",
-                                         "/var/lib/controllertracking/controller-utils-updater",
+                                         "/var/lib/controller-utils/controller-utils-updater",
                                          "--repair-status"}));
         return std::make_unique<FakeChild>();
     };

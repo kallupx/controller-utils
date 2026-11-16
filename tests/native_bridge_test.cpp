@@ -15,10 +15,10 @@ class TestQueue final : public ct::steamvr::BlockQueue {
     bool pending = false, absent = false, null_imu_buffer = false;
     int Create(uint64_t *handle, const char *name, uint32_t size, uint32_t, uint32_t,
                uint32_t flag) override {
-        if (!std::strcmp(name, "/controllertracking/native/input_v1")) {
+        if (!std::strcmp(name, "/controller-utils/native/input_v1")) {
             assert(size == sizeof(ct::wire::Command) && flag == 1);
             input = next;
-        } else if (!std::strcmp(name, "/controllertracking/native/status_v1")) {
+        } else if (!std::strcmp(name, "/controller-utils/native/status_v1")) {
             assert(size == sizeof(ct::wire::Status) && flag == 0);
             output = next;
         } else {
@@ -156,7 +156,7 @@ class TestContext final : public vr::IVRDriverContext {
 
 ct::wire::Command connection() {
     const char *json =
-        R"({"device_class":"controller","device_serial_number":"controllertracking-sc26-TEST1234","model_number":"ibex_ev1","imu":{"plus_x":[1,0,0],"plus_z":[0,0,1],"position":[0,0,0]},"lighthouse_config":{"modelPoints":[[0,0,0]],"modelNormals":[[0,0,1]]}})";
+        R"({"device_class":"controller","device_serial_number":"controllerutils-sc26-TEST1234","model_number":"ibex_ev1","imu":{"plus_x":[1,0,0],"plus_z":[0,0,1],"position":[0,0,0]},"lighthouse_config":{"modelPoints":[[0,0,0]],"modelNormals":[[0,0,1]]}})";
     ct::wire::Command command{};
     command.magic = ct::wire::Magic;
     command.kind = 4;
@@ -271,7 +271,7 @@ void test_app_input_wire_and_disable() {
     auto value = controls(100, 100.02);
     f.ui(value, value.time);
     assert(f.context.host.adds == 1 &&
-           f.context.host.serial == "controllertracking-sc26-input-TEST1234");
+           f.context.host.serial == "controllerutils-sc26-input-TEST1234");
     assert(f.context.properties.role() == vr::TrackedControllerRole_RightHand);
     const auto &pose = f.context.host.published;
     assert(pose.deviceIsConnected && pose.poseIsValid &&
@@ -373,7 +373,7 @@ void test_rejected_app_packets() {
     no_lease.bridge.run_frame(280.11);
     assert((no_lease.context.queue.events == std::vector<uint32_t>{1, 0}));
     assert(std::find(no_lease.context.log.messages.begin(), no_lease.context.log.messages.end(),
-                     "controllertracking native disconnect reason=bench timeout") !=
+                     "Controller Utils native disconnect reason=bench timeout") !=
            no_lease.context.log.messages.end());
 }
 
@@ -417,7 +417,7 @@ void test_interactive_session_leases() {
     assert((no_imu.context.queue.events == std::vector<uint32_t>{1, 0}));
     no_imu.released();
     assert(std::find(no_imu.context.log.messages.begin(), no_imu.context.log.messages.end(),
-                     "controllertracking native disconnect reason=IMU timeout") !=
+                     "Controller Utils native disconnect reason=IMU timeout") !=
            no_imu.context.log.messages.end());
 }
 
@@ -458,7 +458,7 @@ int main() {
     }
     std::string serial;
     auto valid = connection();
-    assert(ct::wire::event(valid, serial) && serial == "controllertracking-sc26-TEST1234");
+    assert(ct::wire::event(valid, serial) && serial == "controllerutils-sc26-TEST1234");
     auto wrong_profile = valid;
     auto *model = std::strstr(reinterpret_cast<char *>(wrong_profile.data + 16), "ibex_ev1");
     assert(model);

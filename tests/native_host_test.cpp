@@ -303,7 +303,7 @@ int main() {
             if (maintenance->unavailable)
                 throw std::runtime_error("maintenance unavailable");
             assert(args.size() == 4 && args[0] == "/usr/bin/sudo" && args[1] == "-n" &&
-                   args[2] == "/var/lib/controllertracking/controller-utils-updater" &&
+                   args[2] == "/var/lib/controller-utils/controller-utils-updater" &&
                    (args[3] == "--repair" || args[3] == "--repair-status"));
             maintenance->messages.clear();
             maintenance->status.reset();

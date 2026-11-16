@@ -48,7 +48,7 @@ struct Overlays {
         }
     }
     void initialize() {
-        check(vr.overlay->CreateOverlay("controllertracking.body.0", "Steam gamepad body", &handle),
+        check(vr.overlay->CreateOverlay("controllerutils.body.0", "Steam gamepad body", &handle),
               "create");
         check(vr.overlay->SetOverlayFlag(handle, vr::VROverlayFlags_VisibleInDashboard, true),
               "dashboard visibility");

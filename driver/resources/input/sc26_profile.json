@@ -1,9 +1,9 @@
 {
   "jsonid": "input_profile",
-  "controller_type": "controllertracking_sc26",
+  "controller_type": "controllerutils_sc26",
   "device_class": "TrackedDeviceClass_Controller",
-  "resource_root": "controllertracking_native",
-  "driver_name": "controllertracking_native",
+  "resource_root": "controllerutils_native",
+  "driver_name": "controllerutils_native",
   "input_bindingui_mode": "controller_handed",
   "should_show_binding_errors": true,
   "input_source": {

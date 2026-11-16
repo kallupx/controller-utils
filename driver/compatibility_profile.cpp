@@ -17,14 +17,14 @@ bool initialize_compatible(ct::steamvr::BlockQueue *queue) {
         const auto user = getpwuid(1000);
         if (!user || !user->pw_dir || !user->pw_name || std::strcmp(user->pw_name, "steamos"))
             return initialize(queue);
-        const auto data = std::filesystem::path(user->pw_dir) /
-                          ".local/share/controllertracking/app-data/updates";
+        const auto data =
+            std::filesystem::path(user->pw_dir) / ".local/share/controller-utils/app-data/updates";
         const ProtectedDirectory cache(data, 1000);
         const auto now =
             std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch())
                 .count();
         const auto profile = update::load_profile(cache, UpdatePublicKey, now);
-        const auto backend = installed_backend("/var/lib/controllertracking");
+        const auto backend = installed_backend("/var/lib/controller-utils");
         if (!profile || profile->backend != backend)
             return initialize(queue);
         return initialize_with(

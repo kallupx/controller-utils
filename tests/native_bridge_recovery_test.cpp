@@ -43,7 +43,7 @@ int main() {
         }
     } cleanup{home};
     assert(!setenv("CT_RECOVERY_TEST_HOME", home.c_str(), 1));
-    auto state = ct::startup_recovery(home / ".local/share/controllertracking/app-data");
+    auto state = ct::startup_recovery(home / ".local/share/controller-utils/app-data");
     for (int i = 0; i < 2; ++i) {
         const auto child = fork();
         assert(child >= 0);
@@ -65,7 +65,7 @@ int main() {
     assert(context.calls && !state.disabled());
     assert(state.begin());
     state.clean();
-    ct::atomic_write(home / ".local/share/controllertracking/app-data/startup-recovery", "damaged");
+    ct::atomic_write(home / ".local/share/controller-utils/app-data/startup-recovery", "damaged");
     Context damaged_context;
     NativeBridge damaged;
     assert(damaged.Init(&damaged_context) == vr::VRInitError_None);

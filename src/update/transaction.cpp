@@ -192,7 +192,7 @@ bool Transaction::activate() {
             read_file(stage.path() / "assets/update-public.pem", 16384) ||
         channel(application_) != channel(stage.path()))
         throw std::runtime_error("Update cannot change its signing key or release channel");
-    copy_record(current, "controllertracking.vrmanifest", stage, MaxMetadata, false);
+    copy_record(current, "controller-utils.vrmanifest", stage, MaxMetadata, false);
     check_requirements(metadata.requirements.get(), installed_());
     current.verify();
     stage.verify();

@@ -66,7 +66,7 @@ struct Fixture {
         ct::atomic_write(app / "assets/update-channel.json",
                          R"({"url":"https://updates.example.test/stable/"})", 0644);
         ct::atomic_write(app / "assets/tracking-calibration.json", "private calibration", 0644);
-        ct::atomic_write(app / "controllertracking.vrmanifest", "private registration", 0644);
+        ct::atomic_write(app / "controller-utils.vrmanifest", "private registration", 0644);
         auto settings = ct::Settings{};
         settings.brightness = 42;
         ct::save_settings(data / "settings.json", settings);

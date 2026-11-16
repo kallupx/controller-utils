@@ -86,9 +86,9 @@ struct AlignmentOverlay {
             return;
         }
         if (!panel) {
-            check(api->CreateOverlay("controllertracking.progress", "Gamepad tracking progress",
-                                     &panel),
-                  "gamepad progress panel");
+            check(
+                api->CreateOverlay("controllerutils.progress", "Gamepad tracking progress", &panel),
+                "gamepad progress panel");
             check(api->SetOverlayFlag(panel, vr::VROverlayFlags_VisibleInDashboard, true),
                   "progress visibility");
             check(api->SetOverlayWidthInMeters(panel, .65f), "progress size");

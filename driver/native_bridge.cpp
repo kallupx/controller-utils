@@ -43,7 +43,7 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
         status.error = error;
         if (log && error) {
             char message[128];
-            std::snprintf(message, sizeof(message), "controllertracking native kind=%u error=%d",
+            std::snprintf(message, sizeof(message), "Controller Utils native kind=%u error=%d",
                           status.last_kind, error);
             log->Log(message);
         }
@@ -102,8 +102,8 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
             return;
         if (log) {
             char message[128];
-            std::snprintf(message, sizeof(message),
-                          "controllertracking native disconnect reason=%s", reason);
+            std::snprintf(message, sizeof(message), "Controller Utils native disconnect reason=%s",
+                          reason);
             log->Log(message);
         }
         uint32_t disconnected = 0;
@@ -116,7 +116,7 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
             last_app_input = 0;
             app_input = {};
             if (log)
-                log->Log("controllertracking native disconnected");
+                log->Log("Controller Utils native disconnected");
         }
     }
     void handle_event(const ct::wire::Command &command, double time) {
@@ -169,7 +169,7 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
         last_imu = 0;
         last_app_input = 0;
         if (log)
-            log->Log("controllertracking native connect published for device 16");
+            log->Log("Controller Utils native connect published for device 16");
     }
     void handle_imu(const ct::wire::Command &command, double time) {
         if (!status.connected || !ct::wire::imu(command, time, last_imu)) {
@@ -207,7 +207,7 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
         }
         try {
             if (!tracked_input->register_device(
-                    serial.substr(std::strlen("controllertracking-sc26-")))) {
+                    serial.substr(std::strlen("controllerutils-sc26-")))) {
                 report(-7);
                 return;
             }
@@ -272,7 +272,7 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
                     throw std::runtime_error("Cannot locate tracking recovery directory");
                 recovery = std::make_unique<ct::StartupRecovery>(
                     ct::startup_recovery(std::filesystem::path(user->pw_dir) /
-                                         ".local/share/controllertracking/app-data"));
+                                         ".local/share/controller-utils/app-data"));
                 if (!recovery->begin())
                     return vr::VRInitError_None;
                 recovery_started = true;
@@ -336,14 +336,14 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
                 return vr::VRInitError_Driver_Failed;
         if (!initialize_queues(queue)) {
             if (log)
-                log->Log("controllertracking native queue startup needs a compatibility update");
+                log->Log("Controller Utils native queue startup needs a compatibility update");
             Cleanup();
             return vr::VRInitError_Driver_Failed;
         }
-        int rc = queue->Create(&input, "/controllertracking/native/input_v1",
+        int rc = queue->Create(&input, "/controller-utils/native/input_v1",
                                sizeof(ct::wire::Command), 512, 64, 1);
         if (!rc)
-            rc = queue->Create(&output, "/controllertracking/native/status_v1",
+            rc = queue->Create(&output, "/controller-utils/native/status_v1",
                                sizeof(ct::wire::Status), 64, 4, 0);
         if (rc) {
             Cleanup();
@@ -351,7 +351,7 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
         }
         publish_status();
         if (log)
-            log->Log("controllertracking native adapter ready; waiting for explicit input");
+            log->Log("Controller Utils native adapter ready; waiting for explicit input");
         startup_completion.completed = true;
         return vr::VRInitError_None;
     }
@@ -410,7 +410,7 @@ class NativeBridge final : public vr::IServerTrackedDeviceProvider {
             if (log) {
                 char message[128];
                 std::snprintf(message, sizeof(message),
-                              "controllertracking isolation check failed: %s",
+                              "Controller Utils isolation check failed: %s",
                               ct::tracker_failure_reason);
                 log->Log(message);
             }

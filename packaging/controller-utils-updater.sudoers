@@ -1,2 +1,2 @@
-steamos ALL=(root) NOPASSWD: /var/lib/controllertracking/controller-utils-updater --apply, /var/lib/controllertracking/controller-utils-updater --confirm, /var/lib/controllertracking/controller-utils-updater --repair, /var/lib/controllertracking/controller-utils-updater --repair-status
-steamos ALL=(root) NOPASSWD: /var/lib/controllertracking/controller-utils-helper --private
+steamos ALL=(root) NOPASSWD: /var/lib/controller-utils/controller-utils-updater --apply, /var/lib/controller-utils/controller-utils-updater --confirm, /var/lib/controller-utils/controller-utils-updater --repair, /var/lib/controller-utils/controller-utils-updater --repair-status
+steamos ALL=(root) NOPASSWD: /var/lib/controller-utils/controller-utils-helper --private

@@ -18,14 +18,14 @@ QueueContext::~QueueContext() {
 uint64_t QueueContext::command_writer() {
     if (!writer_) {
         uint64_t handle = 0;
-        const int result = queue_.Connect(&handle, "/controllertracking/native/input_v1");
+        const int result = queue_.Connect(&handle, "/controller-utils/native/input_v1");
         if (result || !handle) {
             if (handle) {
                 const int cleanup = queue_.Destroy(handle);
                 if (cleanup)
                     std::cerr << "Native command queue partial cleanup: " << cleanup << '\n';
             }
-            throw std::runtime_error("Native queue /controllertracking/native/input_v1: " +
+            throw std::runtime_error("Native queue /controller-utils/native/input_v1: " +
                                      (result ? std::to_string(result) : "null handle"));
         }
         writer_ = handle;
@@ -84,7 +84,7 @@ NativeTracking::NativeTracking(QueueContext &context, const std::string &profile
     started_ = monotonic_();
     try {
         source_ = context_.command_writer();
-        status_queue_ = open("/controllertracking/native/status_v1");
+        status_queue_ = open("/controller-utils/native/status_v1");
         const auto packet = read(status_queue_, sizeof(wire::Status));
         if (!packet)
             throw std::runtime_error("Native tracking driver is not ready.");

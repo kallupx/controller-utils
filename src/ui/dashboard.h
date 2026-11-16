@@ -93,8 +93,8 @@ struct Dashboard {
             cairo_surface_destroy(artwork);
     }
     void initialize() {
-        check(api->CreateDashboardOverlay("org.controllertracking.frame", "Controller Utils",
-                                          &panel, &thumbnail),
+        check(api->CreateDashboardOverlay("org.controllerutils.frame", "Controller Utils", &panel,
+                                          &thumbnail),
               "settings panel");
         check(api->SetOverlayFlag(panel, vr::VROverlayFlags_NoDashboardTab, true),
               "prepare taskbar icon");
@@ -513,7 +513,7 @@ struct Dashboard {
         upload(texture, panel, image);
         cairo_surface_destroy(image);
         if (show_requested) {
-            api->ShowDashboard("org.controllertracking.frame");
+            api->ShowDashboard("org.controllerutils.frame");
             show_requested = false;
         }
         submitted = true;

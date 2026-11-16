@@ -50,11 +50,11 @@ class ReleaseConfigurationTest(unittest.TestCase):
         self.assertEqual(
             set(commands),
             {
-                "/var/lib/controllertracking/controller-utils-helper --private",
-                "/var/lib/controllertracking/controller-utils-updater --apply",
-                "/var/lib/controllertracking/controller-utils-updater --confirm",
-                "/var/lib/controllertracking/controller-utils-updater --repair",
-                "/var/lib/controllertracking/controller-utils-updater --repair-status",
+                "/var/lib/controller-utils/controller-utils-helper --private",
+                "/var/lib/controller-utils/controller-utils-updater --apply",
+                "/var/lib/controller-utils/controller-utils-updater --confirm",
+                "/var/lib/controller-utils/controller-utils-updater --repair",
+                "/var/lib/controller-utils/controller-utils-updater --repair-status",
             },
         )
         if shutil.which("visudo"):
@@ -79,6 +79,6 @@ class ReleaseConfigurationTest(unittest.TestCase):
         self.assertRegex(
             service,
             re.escape(
-                "ExecStart=/usr/bin/sudo -n /var/lib/controllertracking/controller-utils-updater --apply"
+                "ExecStart=/usr/bin/sudo -n /var/lib/controller-utils/controller-utils-updater --apply"
             ),
         )

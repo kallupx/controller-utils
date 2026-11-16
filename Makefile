@@ -414,9 +414,9 @@ build/native_bridge_test: tests/native_bridge_test.cpp tests/tracked_input_suppo
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) $< $(DRIVER_PROFILE_SOURCES) -ljson-c -lcrypto -ldl -pthread -o $@
 
-native-driver: build/native-driver/bin/$(ARCH)/driver_controllertracking_native.so build/native-driver/driver.vrdrivermanifest build/native-driver/resources/input/sc26_profile.json build/native-driver/resources/input/vrcompositor_bindings_sc26.json build/native-driver/resources/rendermodels/sc26_input/sc26_input.obj
+native-driver: build/native-driver/bin/$(ARCH)/driver_controllerutils_native.so build/native-driver/driver.vrdrivermanifest build/native-driver/resources/input/sc26_profile.json build/native-driver/resources/input/vrcompositor_bindings_sc26.json build/native-driver/resources/rendermodels/sc26_input/sc26_input.obj
 
-build/native-driver/bin/$(ARCH)/driver_controllertracking_native.so: driver/native_bridge.cpp src/steamvr/startup_recovery.h driver/tracked_input.h driver/tip_cursor.h src/interaction/pointer_math.h src/interaction/pose_math.h src/steamvr/protocol.h driver/tracker_capability.h src/tracking/native_abi.h driver/native_queue_startup.h src/steamvr/queue_abi.h third_party/openvr/openvr_driver.h src/steamvr/code.h src/steamvr/module.h src/steamvr/queue_validation.h $(DRIVER_PROFILE_SOURCES) src/update/profiles.h src/update/metadata.h build/update_public_key.h
+build/native-driver/bin/$(ARCH)/driver_controllerutils_native.so: driver/native_bridge.cpp src/steamvr/startup_recovery.h driver/tracked_input.h driver/tip_cursor.h src/interaction/pointer_math.h src/interaction/pose_math.h src/steamvr/protocol.h driver/tracker_capability.h src/tracking/native_abi.h driver/native_queue_startup.h src/steamvr/queue_abi.h third_party/openvr/openvr_driver.h src/steamvr/code.h src/steamvr/module.h src/steamvr/queue_validation.h $(DRIVER_PROFILE_SOURCES) src/update/profiles.h src/update/metadata.h build/update_public_key.h
 	mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -fPIC -shared -fvisibility=hidden $< $(DRIVER_PROFILE_SOURCES) -ljson-c -lcrypto -ldl -pthread -o $@
 

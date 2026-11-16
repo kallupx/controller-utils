@@ -296,14 +296,14 @@ void NativeApplicationHost::confirm_update() {
     update::confirm(root_, data_, lock_);
     if (update::channel(root_) == update::GitHubChannel)
         update_confirmation_ =
-            children_({"/usr/bin/sudo", "-n",
-                       "/var/lib/controllertracking/controller-utils-updater", "--confirm"});
+            children_({"/usr/bin/sudo", "-n", "/var/lib/controller-utils/controller-utils-updater",
+                       "--confirm"});
 }
 void NativeApplicationHost::verify_permission_updater() {
     if (repair_verifier_)
         repair_verifier_();
     else {
-        ProtectedDirectory native("/var/lib/controllertracking");
+        ProtectedDirectory native("/var/lib/controller-utils");
         (void)update::verify_repair_updater(native, UpdatePublicKey);
     }
 }

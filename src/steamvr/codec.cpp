@@ -43,7 +43,7 @@ std::string controller_profile(const std::string &serial) {
             return !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
         }))
         throw std::invalid_argument("invalid controller serial");
-    return R"({"device_class":"controller","device_serial_number":"controllertracking-sc26-)" +
+    return R"({"device_class":"controller","device_serial_number":"controllerutils-sc26-)" +
            serial +
            R"(","manufacturer":"Valve","model_number":"ibex_ev1","revision":2,"tracked_controller_role":"right_hand","imu":{"plus_x":[1,0,0],"plus_z":[0,0,1],"position":[0,0,0]},"lighthouse_config":{"modelPoints":[[0,0,0]],"modelNormals":[[0,0,1]]}})";
 }

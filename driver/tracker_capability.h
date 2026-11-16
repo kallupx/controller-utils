@@ -21,7 +21,7 @@ inline bool tracker_ready(double time) {
         tracker_failure_reason = reason;
         return false;
     };
-    int directory = open("/run/controllertracking-native-tracker",
+    int directory = open("/run/controller-utils-native-tracker",
                          O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (directory < 0)
         return reject("status directory missing");

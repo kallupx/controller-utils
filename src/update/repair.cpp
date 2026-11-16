@@ -258,8 +258,8 @@ std::unique_ptr<ChildChannel> start_repair_action(const ChildFactory &children,
     if (!children || !verify)
         throw std::invalid_argument("Permission repair is unavailable");
     verify();
-    auto child = children({"/usr/bin/sudo", "-n",
-                           "/var/lib/controllertracking/controller-utils-updater", "--repair"});
+    auto child = children(
+        {"/usr/bin/sudo", "-n", "/var/lib/controller-utils/controller-utils-updater", "--repair"});
     if (!child)
         throw std::runtime_error("Could not start permission repair");
     return child;
@@ -270,7 +270,7 @@ std::unique_ptr<ChildChannel> start_inspection_action(const ChildFactory &childr
         throw std::invalid_argument("Permission inspection is unavailable");
     verify();
     auto child =
-        children({"/usr/bin/sudo", "-n", "/var/lib/controllertracking/controller-utils-updater",
+        children({"/usr/bin/sudo", "-n", "/var/lib/controller-utils/controller-utils-updater",
                   "--repair-status"});
     if (!child)
         throw std::runtime_error("Could not start permission inspection");

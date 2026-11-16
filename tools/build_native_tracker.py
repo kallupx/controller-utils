@@ -20,7 +20,7 @@ if not pins:
 XR_HASHES = set(re.findall(r'"([a-f0-9]{64})"', pins.group(1)))
 CAVE, CONTROL = 0x315ABB0, 0x343FF60
 CAVE_LIMIT = 0x315B000
-LIBRARY = "/var/lib/controllertracking/native-tracker/libnative_tracker.so"
+LIBRARY = "/var/lib/controller-utils/native-tracker/libnative_tracker.so"
 SITES = (
     0xEAFC50,
     0xEB6F30,

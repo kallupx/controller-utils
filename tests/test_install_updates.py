@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = Path("/home/steamos/.local/share/controllertracking")
-PRIVILEGED = Path("/var/lib/controllertracking")
+BASE = Path("/home/steamos/.local/share/controller-utils")
+PRIVILEGED = Path("/var/lib/controller-utils")
 SERVICE = Path("/home/steamos/.local/share/systemd/user")
 
 
@@ -130,7 +130,7 @@ if sys.argv[1] == '--stage':
     shutil.copytree('/opt/controller-utils', sys.argv[3])
 elif sys.argv[1] == '--install':
     assert os.getuid() == 0
-    root = pathlib.Path('/var/lib/controllertracking')
+    root = pathlib.Path('/var/lib/controller-utils')
     assert root.stat().st_uid == 0 and not root.stat().st_mode & 0o022
     shutil.copyfile('/opt/controller-utils/compatibility/controller-utils-updater', root / 'controller-utils-updater')
     (root / 'controller-utils-updater').chmod(0o755)
@@ -140,7 +140,7 @@ elif sys.argv[1] == '--uninstall':
     assert os.getuid() == 0
     if pathlib.Path('/home/steamos/fail-uninstall').exists():
         sys.exit(1)
-    shutil.rmtree('/var/lib/controllertracking')
+    shutil.rmtree('/var/lib/controller-utils')
 else:
     raise ValueError(sys.argv)
 """,
@@ -180,7 +180,7 @@ with open('/trace/install.log', 'a') as log:
 if path.endswith('/controller-utils-update.service') and os.path.exists('/home/steamos/race'):
     directory = os.path.dirname(path)
     os.rmdir(directory)
-    os.symlink('/var/lib/controllertracking', directory)
+    os.symlink('/var/lib/controller-utils', directory)
 os.execv('/test-bin/install-real', ['install', *sys.argv[1:]])
 """,
         0o755,
@@ -198,6 +198,22 @@ os.execv('/test-bin/install-real', ['install', *sys.argv[1:]])
     home = root / "home/steamos"
     write(root / BASE.relative_to("/") / "app-data/app.lock", "", 0o600)
     write(root / BASE.relative_to("/") / "app-data/settings.json", "preserved settings", 0o600)
+    write(
+        root / BASE.relative_to("/") / "app-data/calibrations/gamepad.json",
+        "preserved calibration",
+        0o600,
+    )
+    legacy = root / BASE.with_name("controllertracking").relative_to("/")
+    if case == "legacy-installed":
+        write(legacy / "app/uninstall.sh", "previous uninstaller", 0o755)
+    elif case in ("legacy-data", "legacy-data-conflict", "legacy-data-link"):
+        legacy.mkdir(parents=True)
+        if case == "legacy-data":
+            (root / BASE.relative_to("/") / "app-data").rename(legacy / "app-data")
+        elif case == "legacy-data-conflict":
+            write(legacy / "app-data/settings.json", "previous settings", 0o600)
+        else:
+            (legacy / "app-data").symlink_to(BASE / "app-data", target_is_directory=True)
     (root / SERVICE.relative_to("/")).mkdir(parents=True)
     for path in (home, *home.rglob("*")):
         os.chown(path, 1000, 1000, follow_symlinks=False)
@@ -262,12 +278,12 @@ os.execv('/test-bin/install-real', ['install', *sys.argv[1:]])
             *user_command,
             "/usr/bin/python3",
             "-c",
-            "from pathlib import Path; p=Path('/var/lib/controllertracking/controller-utils-updater'); p.unlink(); p.write_text('replacement')",
+            "from pathlib import Path; p=Path('/var/lib/controller-utils/controller-utils-updater'); p.unlink(); p.write_text('replacement')",
         ],
         capture_output=True,
         text=True,
     )
-    if case in ("normal", "remove-failure") and result.returncode == 0:
+    if case in ("normal", "remove-failure", "legacy-data") and result.returncode == 0:
         repeated = subprocess.run(command, capture_output=True, text=True).returncode
         write(BASE / "app-data/startup-recovery", "disabled recovery")
         if case == "remove-failure":
@@ -336,6 +352,7 @@ os.execv('/test-bin/install-real', ['install', *sys.argv[1:]])
                 "remove_status": removed.returncode if removed else None,
                 "remove_stderr": removed.stderr if removed else None,
                 "settings": (BASE / "app-data/settings.json").read_text(),
+                "calibration": (BASE / "app-data/calibrations/gamepad.json").read_text(),
                 "recovery_exists": (BASE / "app-data/startup-recovery").exists(),
                 "app_exists": (BASE / "app").exists(),
                 "root_exists": PRIVILEGED.exists(),
@@ -344,6 +361,11 @@ os.execv('/test-bin/install-real', ['install', *sys.argv[1:]])
                 if Path("/home/steamos/systemctl.log").exists()
                 else [],
                 "steamvr_masked": Path("/home/steamos/steamvr.masked").exists(),
+                "legacy_settings": (
+                    BASE.with_name("controllertracking") / "app-data/settings.json"
+                ).read_text()
+                if (BASE.with_name("controllertracking") / "app-data/settings.json").is_file()
+                else None,
             }
         )
     )
@@ -428,6 +450,33 @@ class InstallUpdatesTest(unittest.TestCase):
         self.assertEqual(result["cleanup_status"], 0, result["stderr"])
         self.assertFalse(result["root_exists"] or result["app_exists"] or result["service_exists"])
         self.assertEqual(result["settings"], "preserved settings")
+
+    def test_previous_installation_requires_its_uninstaller(self):
+        result = self.check_case("legacy-installed")
+        self.assertNotEqual(result["status"], 0)
+        self.assertIn("controllertracking/app/uninstall.sh", result["stderr"])
+        self.assertEqual(result["native"], [])
+        self.assertEqual(result["settings"], "preserved settings")
+
+    def test_previous_settings_are_moved_and_survive_removal(self):
+        result = self.check_case("legacy-data")
+        self.assertEqual(result["status"], 0, result["stderr"])
+        self.assertEqual(result["remove_status"], 0, result["remove_stderr"])
+        self.assertEqual(result["settings"], "preserved settings")
+        self.assertEqual(result["calibration"], "preserved calibration")
+        self.assertIsNone(result["legacy_settings"])
+
+    def test_previous_settings_conflicts_and_symlinks_are_preserved(self):
+        for case in ("legacy-data-conflict", "legacy-data-link"):
+            with self.subTest(case=case):
+                result = self.check_case(case)
+                self.assertNotEqual(result["status"], 0)
+                self.assertEqual(result["native"], [])
+                self.assertEqual(result["settings"], "preserved settings")
+                self.assertEqual(
+                    result["legacy_settings"],
+                    "previous settings" if case == "legacy-data-conflict" else "preserved settings",
+                )
 
     def test_failed_removal_restores_steamvr_startup(self):
         result = self.check_case("remove-failure")

@@ -61,7 +61,7 @@ class Backend final : public ct::InputBackend {
         return accept_release;
     }
     std::optional<unsigned> pointer_device(const std::string &serial) override {
-        if (serial != "controllertracking-sc26-input-TEST1234")
+        if (serial != "controllerutils-sc26-input-TEST1234")
             throw std::runtime_error("wrong pointer identity");
         return device;
     }

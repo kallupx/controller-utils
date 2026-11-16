@@ -1,7 +1,7 @@
 // Evaluated only in Steam's SharedJSContext. No raw input-source state is changed.
-(function controllertrackingInputFilter(request) {
+(function controllerutilsInputFilter(request) {
     "use strict";
-    const key = "__controllertrackingInputFilterV1";
+    const key = "__controllerutilsInputFilterV1";
     const name = "OnButtonActionInternal";
     const now = () => performance.now();
     const inactive = reason => ({active : false, index : -1, serial : request.serial, reason});
@@ -45,7 +45,7 @@
         return text.length === length && hash === expected;
     };
     if (request.systemOnly) {
-        const systemKey = "__controllertrackingSystemInputV1";
+        const systemKey = "__controllerutilsSystemInputV1";
         let system = globalThis[systemKey];
         if (system?.active && (system.deadline <= now() || controllerIndex() !== system.index))
             system.close();
@@ -176,7 +176,7 @@
                     return {component : fiber.stateNode, window};
         }
     };
-    const watchKey = "__controllertrackingKeyboardWatchV1";
+    const watchKey = "__controllerutilsKeyboardWatchV1";
     const syncTyping = () => {
         let watch = globalThis[watchKey];
         if (watch && (watch.owner !== request.owner || watch.serial !== request.serial))

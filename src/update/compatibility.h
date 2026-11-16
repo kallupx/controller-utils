@@ -5,7 +5,7 @@
 namespace ct::update {
 struct Installation {
     std::filesystem::path application;
-    std::filesystem::path helpers = "/var/lib/controllertracking";
+    std::filesystem::path helpers = "/var/lib/controller-utils";
     std::array<std::filesystem::path, RuntimeFiles.size()> runtime{
         steamvr::compatibility::XrService.path};
 };

@@ -88,8 +88,8 @@ struct Fixture {
     ct::ApplicationRegistration registration{api};
     explicit Fixture(const fs::path &path)
         : base(path), app(path / "app"), home(path / "home"),
-          desktop(home / ".local/share/applications/org.controllertracking.frame.desktop"),
-          manifest(app / "controllertracking.vrmanifest"), launcher(path / "controller-utils") {
+          desktop(home / ".local/share/applications/org.controllerutils.frame.desktop"),
+          manifest(app / "controller-utils.vrmanifest"), launcher(path / "controller-utils") {
         assert(fs::create_directory(base));
         fs::create_directory(home);
         fs::create_directories(app / "assets");
@@ -133,7 +133,7 @@ int main() {
         f.install();
         f.validate();
         const auto value = j::parse(ct::read_file(f.manifest, 65536));
-        assert(j::string(j::field(value.get(), "source")) == "controllertracking");
+        assert(j::string(j::field(value.get(), "source")) == "controllerutils");
         const auto app = j::item(j::field(value.get(), "applications"), 0);
         for (const auto key : {"binary_path_linux", "binary_path_linux_arm"})
             assert(j::string(j::field(app, key)) == f.launcher.string());

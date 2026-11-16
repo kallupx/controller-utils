@@ -222,7 +222,7 @@ void InputControl::update_beam(double now) {
     if (state.beam_hidden && now - state.last_beam_heartbeat < .2)
         return;
     if (!state.beam_device) {
-        auto index = backend_.pointer_device("controllertracking-sc26-input-" + serial_);
+        auto index = backend_.pointer_device("controllerutils-sc26-input-" + serial_);
         if (!index || *index >= 64)
             return;
         state.beam_device = index;
