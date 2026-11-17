@@ -18,6 +18,9 @@ class ApplicationHost {
     virtual void autostart(bool enabled) = 0;
     virtual std::unique_ptr<TrackingSessionView> track(const Settings &options) = 0;
     virtual void shortcut(const std::string &action) = 0;
+    virtual std::optional<std::string> camera_switch_error(bool) {
+        return {};
+    }
     virtual bool system_input(bool enabled) = 0;
     virtual void shortcut_progress(std::optional<double> amount) = 0;
     virtual void request_keyboard() = 0;
@@ -53,8 +56,8 @@ class Application {
     std::optional<BindingCapture> capture_;
     std::optional<ControllerInput> latest_input_;
     std::optional<std::string> runtime_problem_, input_status_, tracking_problem_, recovery_error_;
-    std::optional<std::string> shortcut_status_, animation_status_, keyboard_status_,
-        system_status_;
+    std::optional<std::string> shortcut_status_, camera_status_, animation_status_,
+        keyboard_status_, system_status_;
     std::string status_;
     bool running_ = true, show_settings_, ui_enabled_ = false;
     bool was_connected_ = false, last_keyboard_typing_ = false;

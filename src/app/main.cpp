@@ -1,4 +1,5 @@
 #include "runner.h"
+#include "steamvr/arcturus.h"
 #include "update/download.h"
 #include "ui/renderer.h"
 #include <charconv>
@@ -10,6 +11,8 @@
 int main(int argc, char **argv) {
     if (argc == 2 && std::string(argv[1]) == "--update-download-worker")
         return ct::update::download_worker();
+    if (argc == 2 && std::string(argv[1]) == "--camera-switch-worker")
+        return ct::camera_switch_worker();
     try {
         const bool registration = argc == 2 && (std::string(argv[1]) == "--register" ||
                                                 std::string(argv[1]) == "--unregister" ||

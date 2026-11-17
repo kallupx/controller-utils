@@ -35,11 +35,13 @@ std::optional<uint32_t> BindingCapture::update(std::optional<uint32_t> buttons, 
     return {};
 }
 std::vector<std::string> SteamShortcuts::update(uint32_t buttons, double now, bool enabled,
-                                                bool keyboard) {
+                                                bool keyboard, bool observed) {
     const bool current_down = buttons & 0x10000;
     const bool reset = !last_sample || now - *last_sample > .25;
     const bool chord = (buttons & 0x10004) == 0x10004;
     const bool screenshot = (buttons & 0x10200) == 0x10200;
+    constexpr uint32_t CameraChord = 0x10000 | CameraSwitchButton;
+    const bool camera = (buttons & CameraChord) == CameraChord;
     std::vector<std::string> actions;
     hold_enabled = enabled;
     if (!reset && keyboard && last_tap && now - *last_tap > .5 && !down) {
@@ -52,6 +54,13 @@ std::vector<std::string> SteamShortcuts::update(uint32_t buttons, double now, bo
     if (enabled && screenshot && !screenshot_chord && !reset)
         actions.emplace_back("screenshot");
     screenshot_chord = screenshot;
+    if (!enabled || reset)
+        camera_armed = false;
+    if (enabled && observed) {
+        if (camera && camera_armed && (buttons & ButtonMask) == CameraChord)
+            actions.emplace_back("camera_switch");
+        camera_armed = !camera;
+    }
     if ((!enabled && !keyboard) || reset) {
         down = current_down;
         started.reset();

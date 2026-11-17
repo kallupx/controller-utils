@@ -249,26 +249,36 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
                            now - latest_input_->received <= .15;
         const auto actions =
             gestures_.update(fresh ? latest_input_->report.buttons : 0, now,
-                             options_.steam_shortcuts && allow && fresh, allow && fresh);
+                             options_.steam_shortcuts && allow && fresh, allow && fresh, false);
         shortcut_actions.insert(shortcut_actions.end(), actions.begin(), actions.end());
     }
     if (sample) {
         latest_input_ = sample;
         host_.send(controls_message(*sample, raw_() - monotonic_()));
     }
+    const bool camera_enabled =
+        allow && options_.steam_shortcuts && options_.pointer_buttons != CameraSwitchButton;
+    if (auto error = host_.camera_switch_error(camera_enabled)) {
+        camera_status_ = *error;
+        host_.log(*error);
+    }
     for (const auto &name : shortcut_actions) {
+        auto &feature_status = name == "keyboard"        ? keyboard_status_
+                               : name == "camera_switch" ? camera_status_
+                                                         : shortcut_status_;
         try {
             if (name == "keyboard") {
                 host_.request_keyboard();
-                keyboard_status_.reset();
             } else {
+                if (name == "camera_switch" && !camera_enabled)
+                    throw std::runtime_error(
+                        "Choose a different UI control button to use Steam + L1.");
                 host_.shortcut(name);
-                shortcut_status_.reset();
             }
+            feature_status.reset();
         } catch (const std::exception &error) {
             if (!shortcut_failure(error))
                 throw;
-            auto &feature_status = name == "keyboard" ? keyboard_status_ : shortcut_status_;
             feature_status = error.what();
             host_.log(*feature_status);
         }
@@ -408,8 +418,8 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
         }
         auto value = options_.to_json();
         put(value.get(), "op", std::string("status"));
-        const std::array<const std::optional<std::string> *, 6> problems{
-            &tracking_problem_, &input_status_,     &shortcut_status_,
+        const std::array<const std::optional<std::string> *, 7> problems{
+            &tracking_problem_, &input_status_,     &shortcut_status_, &camera_status_,
             &system_status_,    &animation_status_, &keyboard_status_};
         const auto count = std::count_if(problems.begin(), problems.end(),
                                          [](const auto *problem) { return bool(*problem); });

@@ -423,7 +423,7 @@ struct Dashboard {
             centered(c, 492, 520, 684, 48, "[RightStick] or [LeftPad] to scroll.", 21, 0xb8bcbf,
                      true);
             row(c, 576, "[Steam] shortcuts",
-                "Hold to recenter. Double-press for passthrough. [Steam] + [R1] to screenshot.");
+                "Recenter, take screenshots, and control passthrough.");
             text(c, 280, 708,
                  "Keyboard: [Steam] + [X]. Look at keys, touch pads to type. Lift both to aim.", 20,
                  0xb8bcbf);

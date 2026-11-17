@@ -149,8 +149,35 @@ void NativeApplicationHost::shortcut(const std::string &action) {
         shortcuts().send_action(ShortcutAction::Passthrough);
     else if (action == "screenshot")
         shortcuts().send_action(ShortcutAction::Screenshot);
-    else
+    else if (action == "camera_switch") {
+        if (!camera_switch_)
+            camera_switch_ =
+                children_({(root_ / "controller-utils").string(), "--camera-switch-worker"});
+        if (!camera_switch_)
+            throw std::runtime_error("Camera shortcut could not start.");
+    } else
         throw std::invalid_argument("unsupported Frame shortcut");
+}
+std::optional<std::string> NativeApplicationHost::camera_switch_error(bool enabled) {
+    if (!enabled)
+        camera_switch_.reset();
+    if (!camera_switch_)
+        return {};
+    try {
+        const auto status = camera_switch_->exit_status();
+        if (!status)
+            return {};
+        auto child = std::move(camera_switch_);
+        if (*status == 0)
+            return {};
+        auto messages = child->poll();
+        if (messages.size() == 1)
+            return json::string(json::field(messages.front().get(), "error"));
+    } catch (const std::exception &error) {
+        camera_switch_.reset();
+        log(error.what());
+    }
+    return "Camera shortcut did not complete. Try again.";
 }
 bool NativeApplicationHost::system_input(bool enabled) {
     const auto controller = reader_.device();
@@ -400,6 +427,7 @@ void NativeApplicationHost::close() {
     if (closed_)
         return;
     closed_ = true;
+    camera_switch_.reset();
     std::exception_ptr failure;
     const auto attempt = [&](const auto &operation) {
         try {

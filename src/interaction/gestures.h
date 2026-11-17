@@ -40,6 +40,7 @@ inline constexpr uint32_t ButtonMask = [] {
     return mask;
 }();
 std::string binding_label(uint32_t buttons);
+inline constexpr uint32_t CameraSwitchButton = 0x80000;
 
 class BindingCapture {
   public:
@@ -54,11 +55,11 @@ class BindingCapture {
 class SteamShortcuts {
   public:
     bool down = false, fired = false, keyboard_chord = false, screenshot_chord = false,
-         second_tap = false;
+         camera_armed = false, second_tap = false;
     bool hold_enabled = false;
     std::optional<double> started, last_tap, last_sample;
     std::vector<std::string> update(uint32_t buttons, double now, bool enabled,
-                                    bool keyboard = false);
+                                    bool keyboard = false, bool observed = true);
     std::optional<double> progress(double now) const;
 };
 

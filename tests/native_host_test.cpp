@@ -174,8 +174,19 @@ int main() {
         });
         reader.poll(true);
         ct::ui::Presentation presentation;
-        ct::NativeApplicationHost host(runtime, reader, lock, presentation, app, data, children(),
-                                       steam_ui(log));
+        auto camera = std::make_shared<MaintenanceFixture>();
+        const auto child_factory =
+            [&](const std::vector<std::string> &command) -> std::unique_ptr<ct::ChildChannel> {
+            if (command.back() != "--camera-switch-worker")
+                return children()(command);
+            assert(command == (std::vector<std::string>{(app / "controller-utils").string(),
+                                                        "--camera-switch-worker"}));
+            ++camera->launches;
+            camera->destroyed = false;
+            return std::make_unique<MaintenanceChild>(camera);
+        };
+        ct::NativeApplicationHost host(runtime, reader, lock, presentation, app, data,
+                                       child_factory, steam_ui(log));
         assert(!host.system_input(false) && log->system_requests == 0);
         assert(host.system_input(true) && log->system_requests == 1);
         const auto feature_reads = hid->feature_reads;
@@ -185,6 +196,17 @@ int main() {
         assert(hid->feature_reads == feature_reads && hid->commands.size() == commands);
         host.shortcut("dashboard");
         assert(log->system_tap == 1);
+        host.shortcut("camera_switch");
+        host.shortcut("camera_switch");
+        assert(camera->launches == 1 && !host.camera_switch_error(true));
+        camera->status = 256;
+        camera->messages = {R"({"error":"Camera disconnected."})"};
+        assert(host.camera_switch_error(true) == "Camera disconnected.");
+        assert(camera->destroyed && !host.camera_switch_error(true));
+        camera->status.reset();
+        host.shortcut("camera_switch");
+        assert(camera->launches == 2 && !camera->destroyed);
+        assert(!host.camera_switch_error(false) && camera->destroyed);
         assert(!host.system_input(false) && log->system_closed);
         host.close();
     }

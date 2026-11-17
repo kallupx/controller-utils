@@ -23,6 +23,7 @@ class NativeApplicationHost final : public ApplicationHost {
     ApplicationRegistration registration_;
     std::unique_ptr<SteamUiSession> keyboard_;
     std::unique_ptr<SteamUiSession> system_input_;
+    std::unique_ptr<ChildChannel> camera_switch_;
     std::string system_serial_;
     uint32_t system_tap_ = 0;
     std::optional<double> system_confirmed_;
@@ -56,6 +57,7 @@ class NativeApplicationHost final : public ApplicationHost {
     void autostart(bool enabled) override;
     std::unique_ptr<TrackingSessionView> track(const Settings &options) override;
     void shortcut(const std::string &action) override;
+    std::optional<std::string> camera_switch_error(bool enabled) override;
     bool system_input(bool enabled) override;
     void shortcut_progress(std::optional<double> amount) override;
     void request_keyboard() override;

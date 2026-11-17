@@ -69,7 +69,9 @@ std::vector<json::Value> XrBackend::poll(bool requested) {
         frames_ = state.frames;
         frames_at_ = now;
     }
-    bool live = state.phase == tracker::Ready && frames_ && now - frames_at_ < .5;
+    // Camera handoffs can pause frames briefly after acquisition has completed.
+    const double frame_timeout = announced_ && !requested ? 1.25 : .5;
+    bool live = state.phase == tracker::Ready && frames_ && now - frames_at_ < frame_timeout;
     if (live)
         live = host_.publish(state, raw_());
     else

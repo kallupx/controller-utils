@@ -105,6 +105,25 @@ int main() {
         for (double now = 11.7; now < 12.3; now += .1)
             assert(keys.update(0, now, true, true).empty());
     }
+    {
+        SteamShortcuts keys;
+        constexpr uint32_t Steam = 0x10000, Camera = 0x90000, Screenshot = 0x10200;
+        assert(keys.update(Camera, 10, true, true).empty());
+        assert(keys.update(0, 10.01, true, true).empty());
+        assert(keys.update(Steam, 10.02, true, true).empty());
+        assert(keys.update(Camera, 10.03, true, true) == std::vector<std::string>{"camera_switch"});
+        assert(keys.update(Camera, 10.04, true, true).empty());
+        assert(!keys.progress(10.04));
+        assert(keys.update(0, 10.20, false, false, false).empty());
+        assert(keys.update(Camera, 10.21, true, true).empty());
+        assert(keys.update(0, 10.22, true, true).empty());
+        assert(keys.update(Camera | Screenshot, 10.23, true, true) ==
+               std::vector<std::string>{"screenshot"});
+        assert(keys.update(Camera, 10.24, true, true).empty());
+        assert(keys.update(0, 10.25, true, true).empty());
+        assert(keys.update(Camera, 10.26, true, true) == std::vector<std::string>{"camera_switch"});
+        assert(keys.update(0, 10.27, true, true).empty());
+    }
     for (bool keyboard : {false, true}) {
         SteamShortcuts keys;
         assert(keys.update(0x10200, 10, true, keyboard).empty());

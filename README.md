@@ -54,10 +54,14 @@ For an existing installation, use updates or uninstall before installing again.
 | View + Menu, hold 5 seconds | Restart tracking |
 | Steam + X | Open the keyboard |
 | Steam + R1 | Take a screenshot |
+| Steam + L1 | Switch between the Frame and Arcturus passthrough cameras |
 | Steam, hold 1 second then release | Recenter the view |
 | Steam, double press | Toggle passthrough |
 
 Steam shortcuts are enabled by default. Change this in Controls.
+Camera switching requires an attached Arcturus Vision Camera and Camera Control
+running from the Arcturus Vision Camera app. Choose a different UI control
+binding if you use L1 for it.
 
 With UI control on, look at the keyboard and touch either pad to type. Both pads
 control the typing cursors. Typing stays active while you look away. Release both
