@@ -23,6 +23,7 @@ class TrackingSessionView {
     AlignmentGuide guide;
     std::string status = "Starting native controller tracking...";
     virtual ~TrackingSessionView() = default;
+    virtual bool acquired() const = 0;
     virtual const InputControl::State &input_state() const = 0;
     virtual void controls(const std::optional<ControllerInput> &input, bool enabled,
                           bool typing = false) = 0;
@@ -83,6 +84,9 @@ class TrackingSession final : public TrackingSessionView, private InputBackend {
     TrackingSession(const TrackingSession &) = delete;
     TrackingSession &operator=(const TrackingSession &) = delete;
     ~TrackingSession() override;
+    bool acquired() const override {
+        return initial.ready;
+    }
     const InputControl::State &input_state() const override;
     void controls(const std::optional<ControllerInput> &input, bool enabled,
                   bool typing = false) override;

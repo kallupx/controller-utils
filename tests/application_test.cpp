@@ -112,6 +112,65 @@ int main() {
         app.close();
     }
     {
+        class CameraHost final : public app_replay::Host {
+          public:
+            std::optional<std::string> error;
+            std::optional<std::string> camera_switch_error(bool enabled) override {
+                auto result = std::exchange(error, std::nullopt);
+                return enabled ? result : std::nullopt;
+            }
+        } host;
+        auto current = j::parse("{}");
+        host.current = current.get();
+        host.acquisition_complete = false;
+        ct::Application app(
+            host, {}, std::nullopt, true, [&] { return host.now; },
+            [&] { return host.now + 1000; });
+        const auto step = [&](uint32_t buttons) {
+            host.now += .05;
+            ct::ControllerInput input;
+            input.received = host.now;
+            input.report.buttons = buttons;
+            app.step(true, true, {input});
+        };
+        const auto attention = [&] {
+            for (size_t i = j::array_size(host.trace.get()); i > 0; --i) {
+                const auto row = j::item(host.trace.get(), i - 1);
+                if (j::string(j::item(row, 1)) != "send")
+                    continue;
+                const auto value = j::item(row, 2);
+                if (j::string(j::field(value, "op")) == "status")
+                    return j::boolean(j::field(value, "status_attention"));
+            }
+            throw std::logic_error("status was not published");
+        };
+        constexpr uint32_t Camera = 0x10000 | ct::CameraSwitchButton;
+        step(0);
+        step(Camera);
+        assert(count(host, "shortcut") == 0);
+        host.acquisition_complete = true;
+        step(Camera);
+        assert(count(host, "shortcut") == 0);
+        step(0);
+        step(Camera);
+        assert(count(host, "shortcut") == 1);
+
+        host.error = "The passthrough camera did not switch.";
+        host.now += .2;
+        step(0);
+        assert(attention());
+        current = j::parse(R"({"events":[{"op":"action","action":"acquire"}]})");
+        host.current = current.get();
+        step(Camera);
+        assert(count(host, "acquire") == 1 && count(host, "shortcut") == 1);
+
+        current = j::parse(R"({"events":[{"op":"action","action":"steam_shortcuts"}]})");
+        host.current = current.get();
+        host.now += .2;
+        step(0);
+        assert(!app.options().steam_shortcuts && !attention());
+    }
+    {
         app_replay::Host host;
         auto current = j::parse("{}");
         host.current = current.get();

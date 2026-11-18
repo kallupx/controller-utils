@@ -256,25 +256,18 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
         latest_input_ = sample;
         host_.send(controls_message(*sample, raw_() - monotonic_()));
     }
-    const bool camera_enabled =
-        allow && options_.steam_shortcuts && options_.pointer_buttons != CameraSwitchButton;
-    if (auto error = host_.camera_switch_error(camera_enabled)) {
-        camera_status_ = *error;
-        host_.log(*error);
-    }
+    bool camera_requested = false;
     for (const auto &name : shortcut_actions) {
-        auto &feature_status = name == "keyboard"        ? keyboard_status_
-                               : name == "camera_switch" ? camera_status_
-                                                         : shortcut_status_;
+        if (name == "camera_switch") {
+            camera_requested = true;
+            continue;
+        }
+        auto &feature_status = name == "keyboard" ? keyboard_status_ : shortcut_status_;
         try {
-            if (name == "keyboard") {
+            if (name == "keyboard")
                 host_.request_keyboard();
-            } else {
-                if (name == "camera_switch" && !camera_enabled)
-                    throw std::runtime_error(
-                        "Choose a different UI control button to use Steam + L1.");
+            else
                 host_.shortcut(name);
-            }
             feature_status.reset();
         } catch (const std::exception &error) {
             if (!shortcut_failure(error))
@@ -328,6 +321,27 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
     }
     if (!running_)
         return;
+    const bool camera_ready =
+        allow && options_.steam_shortcuts &&
+        (!options_.tracking_enabled || (!restart && session_ && session_->acquired()));
+    const bool camera_conflict = options_.pointer_buttons == CameraSwitchButton;
+    if (!options_.steam_shortcuts || !connected)
+        camera_status_.reset();
+    if (auto error = host_.camera_switch_error(camera_ready && !camera_conflict)) {
+        camera_status_ = *error;
+        host_.log(*error);
+    }
+    if (camera_requested && camera_ready) {
+        try {
+            if (camera_conflict)
+                throw std::runtime_error("Choose a different UI control button to use Steam + L1.");
+            host_.shortcut("camera_switch");
+            camera_status_.reset();
+        } catch (const std::runtime_error &error) {
+            camera_status_ = error.what();
+            host_.log(*camera_status_);
+        }
+    }
     try {
         if (session_ && (!options_.tracking_enabled || !awake || !connected)) {
             send_op("hide");

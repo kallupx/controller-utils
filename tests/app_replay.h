@@ -15,6 +15,9 @@ class Host : public ct::ApplicationHost {
         explicit Session(Host &host) : host_(host) {
             status = "native fixture";
         }
+        bool acquired() const override {
+            return host_.acquisition_complete;
+        }
         const ct::InputControl::State &input_state() const override {
             return input_;
         }
@@ -67,6 +70,7 @@ class Host : public ct::ApplicationHost {
     json_object *current = nullptr;
     j::Value trace{json_object_new_array()};
     bool recovery_mode = false;
+    bool acquisition_complete = true;
     bool keyboard_pending = false;
     bool progress_available = false;
     static json_object *input_json(const ct::ControllerInput &input) {

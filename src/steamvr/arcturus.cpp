@@ -64,7 +64,13 @@ void check_recorder() {
         throw std::runtime_error("Finish recording before switching passthrough cameras.");
 }
 
-void request_camera_switch(sd_bus *bus, const std::string &owner, int sensor, bool color) {
+template <class ReadSelection>
+void request_camera_switch(sd_bus *bus, const std::string &owner, int sensor,
+                           ReadSelection read_selection, double deadline) {
+    const auto selected = read_selection();
+    if (!selected)
+        throw std::runtime_error("Open passthrough and try the camera shortcut again.");
+    const bool color = !*selected;
     check_recorder();
     if (!camera_connected(sensor))
         throw std::runtime_error(CameraMissing);
@@ -74,9 +80,21 @@ void request_camera_switch(sd_bus *bus, const std::string &owner, int sensor, bo
     if (sd_bus_call_method(bus, owner.c_str(), CameraPath, "org.gtk.Actions", "Activate", nullptr,
                            nullptr, "sava{sv}", CameraAction, 1, "b", int(color), 0) < 0)
         throw std::runtime_error("Camera Control did not confirm the request. Try again.");
+    while (monotonic_time() < deadline) {
+        if (read_selection() == color) {
+            if (!camera_connected(sensor))
+                throw std::runtime_error(CameraMissing);
+            return;
+        }
+        if (poll(&parent, 1, 50) != 0)
+            return;
+    }
+    if (!camera_connected(sensor))
+        throw std::runtime_error(CameraMissing);
+    throw std::runtime_error("The passthrough camera did not switch. Try again.");
 }
 
-bool uses_color_camera(Runtime &runtime) {
+std::optional<bool> color_camera_selected(Runtime &runtime) {
     auto camera = runtime.interface("IVRCameraPassthroughInternal_001");
     const uintptr_t *table = nullptr;
     iovec local{&table, sizeof(table)}, remote{camera, sizeof(table)};
@@ -94,7 +112,7 @@ bool uses_color_camera(Runtime &runtime) {
     if (std::any_of(config.begin(), config.end(), [](uint8_t byte) { return byte > 1; }))
         throw std::runtime_error(CameraLayoutChanged);
     if (!config[0])
-        throw std::runtime_error("Open passthrough and try the camera shortcut again.");
+        return {};
     return config[2] != 0;
 }
 
@@ -122,7 +140,7 @@ std::string camera_service(sd_bus *bus) {
     return owner;
 }
 
-void switch_camera() {
+void switch_camera(double deadline) {
     const auto camera = find_camera();
     sd_bus *raw = nullptr;
     const auto opened = sd_bus_open_user(&raw);
@@ -131,14 +149,15 @@ void switch_camera() {
         throw std::runtime_error(ServiceMissing);
     const auto owner = camera_service(bus.get());
     Runtime runtime;
-    request_camera_switch(bus.get(), owner, camera.get(), !uses_color_camera(runtime));
+    request_camera_switch(
+        bus.get(), owner, camera.get(), [&] { return color_camera_selected(runtime); }, deadline);
 }
 } // namespace
 
 int camera_switch_worker() {
     alarm(2);
     try {
-        switch_camera();
+        switch_camera(monotonic_time() + 1.85);
         return 0;
     } catch (const std::exception &error) {
         json::Value result(json_object_new_object());
