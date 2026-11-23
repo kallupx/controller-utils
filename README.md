@@ -43,7 +43,7 @@ The app starts with SteamVR after its first launch. Change this in App settings.
 If v0.3.0 stays at **Palm + LED** with the LED visible in passthrough, try
 **SteamVR Settings → Camera → Anti-Flicker → 50Hz**. The released v0.3.0 misses
 the images it needs to see your hands when Frame uses 60Hz camera timing.
-After installing the fix, you can restore your usual Anti-Flicker setting.
+After installing v0.3.1, you can restore your usual Anti-Flicker setting.
 
 If tracking shows **Resource temporarily unavailable** or **timed out**, put
 Frame on, wait for its own tracking to wake up and leave the gamepad connected.
