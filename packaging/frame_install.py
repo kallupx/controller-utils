@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 VR = Path("/opt/steamvr/bin/linuxarm64")
@@ -295,11 +296,22 @@ def service_files():
     )
 
 
+@contextmanager
+def setup_lock(data):
+    with (data / "frame-install.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(
+                "Another Controller Utils setup is running. Wait for it to finish before trying again."
+            ) from None
+        yield
+
+
 def install(package, camera_config, unattended=False, migrate=False):
     data, app = BASE / "app-data", BASE / "app"
     data.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with (data / "frame-install.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with setup_lock(data):
         validate_calibration(package, data, camera_config)
         sources = policy_sources(package)
         legacy = legacy_installation()
@@ -426,8 +438,7 @@ def uninstall(package):
     data, app = BASE / "app-data", BASE / "app"
     driver, launcher = BASE / "native-driver", BASE / "controller-utils"
     camera_env, input_env, drop_ins = service_files()
-    with (data / "frame-install.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with setup_lock(data):
         if (
             not app.is_dir()
             or app.is_symlink()

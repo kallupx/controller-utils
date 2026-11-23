@@ -22,6 +22,17 @@ def arm64_file(path):
 
 
 class FramePackageTest(unittest.TestCase):
+    def test_concurrent_setup_explains_lock_and_allows_retry_after_release(self):
+        setup_lock = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["setup_lock"]
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            with setup_lock(data):
+                with self.assertRaisesRegex(RuntimeError, "Another Controller Utils setup"):
+                    with setup_lock(data):
+                        self.fail("Two installers acquired the same lock")
+            with setup_lock(data):
+                pass
+
     def test_preflight_accepts_a_new_build_on_the_same_channel(self):
         main = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["main"]
         output = io.StringIO()

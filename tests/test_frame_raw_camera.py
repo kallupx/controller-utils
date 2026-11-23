@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import sys
+import tempfile
 import unittest
 from concurrent.futures import Future
 from pathlib import Path
@@ -22,7 +23,9 @@ class RawCameraTest(unittest.TestCase):
         with patch.object(
             sys, "path", [str(Path(__file__).resolve().parents[1] / "tools"), *sys.path]
         ):
+            import frame_camera_worker as worker
             import frame_raw_camera as raw
+        self.worker = worker
         self.raw = raw
         self.sender, self.receiver = socket.socketpair(type=socket.SOCK_SEQPACKET)
         self.addCleanup(self.sender.close)
@@ -70,6 +73,60 @@ class RawCameraTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not match"):
             self.raw.calibration(self.receiver, "HEADSET")
 
+    def test_full_backlog_then_delayed_camera_calibration(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as listener,
+        ):
+            path = directory + "/camera.sock"
+            listener.bind(path)
+            listener.listen(0)
+            listener.settimeout(1)
+            with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as abandoned:
+                abandoned.connect(path)
+            polls = 0
+
+            def poll(track):
+                nonlocal polls
+                polls += 1
+                if polls == 2:
+                    listener.accept()[0].close()  # Make room for the worker.
+                if polls == 4:
+                    listener.accept()[0].close()  # Provider restarted before its handshake.
+                if polls == 6:
+                    with listener.accept()[0] as peer:
+                        peer.sendall(b'{"version":1}')
+                return True
+
+            with (
+                patch.object(self.raw, "address", return_value=path),
+                patch.object(
+                    self.raw, "parse_calibration", return_value=("cams", "config")
+                ) as parse,
+                self.worker.camera_feed("HEADSET", SimpleNamespace(poll=poll)) as feed,
+            ):
+                self.assertEqual(feed[1:], ("cams", "config"))
+            parse.assert_called_once_with({"version": 1}, "HEADSET")
+
+    def test_camera_wait_honors_stop_and_reports_a_persistently_missing_provider(self):
+        worker = self.worker
+        parent = worker.Parent()
+        with patch.object(worker.select, "select", return_value=([], [], [])):
+            parent.last -= 30
+            self.assertTrue(parent.poll(None))  # The app sends heartbeats only after ready.
+            with self.assertRaisesRegex(TimeoutError, "heartbeat"):
+                parent.poll(object())
+            parent.stopped = True
+            with worker.camera_feed("HEADSET", parent) as feed:
+                self.assertIsNone(feed)
+            parent.stopped = False
+            with (
+                patch.object(worker.time, "monotonic", side_effect=[0, 21]),
+                self.assertRaisesRegex(TimeoutError, "restart SteamVR"),
+            ):
+                with worker.camera_feed("HEADSET", parent):
+                    self.fail("A missing provider opened a feed")
+
     def test_read_only_shared_backing_with_offset(self):
         offset = os.sysconf("SC_PAGE_SIZE")
         os.pwrite(self.fd, bytes([7, 8, 9, 0, 1, 2, 3, 0]), offset)
@@ -102,11 +159,7 @@ class RawCameraTest(unittest.TestCase):
             self.raw.frame(self.receiver, self.cameras, 0, consume)
 
     def test_illumination_handoff_does_not_update_dark_baseline(self):
-        with patch.object(
-            sys, "path", [str(Path(__file__).resolve().parents[1] / "tools"), *sys.path]
-        ):
-            import frame_camera_worker as worker
-
+        worker = self.worker
         with patch.object(worker, "PalmBootstrap", return_value=SimpleNamespace(head=None)):
             tracker = worker.CameraTracking(
                 dict.fromkeys(("left", "right", "top", "bottom")), {}, None
@@ -123,11 +176,7 @@ class RawCameraTest(unittest.TestCase):
             self.assertTrue(update.call_args.args[2])
 
     def test_restored_alignment_streams_led_without_using_a_pending_palm(self):
-        with patch.object(
-            sys, "path", [str(Path(__file__).resolve().parents[1] / "tools"), *sys.path]
-        ):
-            import frame_camera_worker as worker
-
+        worker = self.worker
         head = np.column_stack([np.eye(3), np.zeros(3)])
         with patch.object(worker, "PalmBootstrap", return_value=SimpleNamespace(head=head)):
             tracker = worker.CameraTracking(

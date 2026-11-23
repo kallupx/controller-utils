@@ -10,7 +10,7 @@ import sys
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
@@ -206,9 +206,49 @@ class Parent:
                 self.last = time.monotonic()
             if len(self.buffer) > 16384:
                 raise ValueError("Session message too large")
-        if time.monotonic() - self.last > 4:
+        if track is not None and not self.stopped and time.monotonic() - self.last > 4:
             raise TimeoutError("Camera session heartbeat stopped")
         return not self.stopped
+
+
+@contextmanager
+def camera_feed(headset, parent):
+    # XRService accepts connections from its capture loop, which pauses in standby.
+    deadline = time.monotonic() + 20
+
+    def waiting():
+        if not parent.poll(None):
+            return False
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                "Frame cameras did not start. Put on the headset to wake it. "
+                "If it is already awake, restart SteamVR."
+            )
+        return True
+
+    while waiting():
+        with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as sock:
+            sock.settimeout(1)
+            try:
+                sock.connect(str(raw.address()))
+            except (FileNotFoundError, ConnectionRefusedError, BlockingIOError):
+                time.sleep(0.1)
+                continue
+            _, uid, _ = struct.unpack(
+                "3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+            )
+            if uid != os.getuid():
+                raise ValueError("Camera provider belongs to a different user")
+            while waiting():
+                if not select.select([sock], [], [], 0.1)[0]:
+                    continue
+                try:
+                    calibration = raw.calibration(sock, headset)
+                except (ConnectionResetError, EOFError):
+                    break  # The camera service restarted during the handshake.
+                yield sock, *calibration
+                return
+    yield None
 
 
 def main(headset):
@@ -220,23 +260,14 @@ def main(headset):
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     with ExitStack() as stack:
-        sock = stack.enter_context(socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET))
-        sock.settimeout(1)
-        while parent.poll(None):
-            try:
-                sock.connect(str(raw.address()))
-                break
-            except (FileNotFoundError, ConnectionRefusedError):
-                time.sleep(0.2)
-        else:
+        feed = stack.enter_context(camera_feed(headset, parent))
+        if feed is None:
             return
-        _, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-        if uid != os.getuid():
-            raise ValueError("Camera provider belongs to a different user")
-        cams, config = raw.calibration(sock, headset)
+        sock, cams, config = feed
         model = stack.enter_context(FramePalmModel())
         pool = stack.enter_context(ThreadPoolExecutor(max_workers=1))
         track = CameraTracking(cams, config, model, pool)
+        parent.last = time.monotonic()
         emit("ready")
         seq = -1
         last_frame = time.monotonic()
