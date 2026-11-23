@@ -87,3 +87,22 @@ class PalmBootstrapTest(unittest.TestCase):
             ):
                 with self.subTest(t=t):
                     self.assertEqual(self.track.update(t, (), infrared, pos) is not None, expect)
+
+    def test_slow_palm_inference_still_requires_three_consistent_poses(self):
+        from tools.frame_palm_bootstrap import StartingPose
+
+        led = np.array([0, 0, 0.45])
+        moved = led + [0.12, 0, 0]
+        with patch.object(
+            self.track, "_pose", side_effect=lambda ims, p, t, g: StartingPose(t, p, np.eye(3))
+        ):
+            for t, point, expect in (
+                (1.0, led, False),
+                (1.15, led, False),
+                (1.50, led, False),
+                (1.65, moved, False),
+                (1.80, moved, False),
+                (1.95, moved, True),
+            ):
+                with self.subTest(t=t):
+                    self.assertEqual(self.track.update(t, (), t, point) is not None, expect)

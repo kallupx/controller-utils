@@ -38,6 +38,24 @@ leave Enable tracking on and follow the headset prompts.
 
 The app starts with SteamVR after its first launch. Change this in App settings.
 
+## Troubleshooting tracking
+
+If v0.3.0 stays at **Palm + LED** with the LED visible in passthrough, try
+**SteamVR Settings → Camera → Anti-Flicker → 50Hz**. The released v0.3.0 misses
+the images it needs to see your hands when Frame uses 60Hz camera timing.
+After installing the fix, you can restore your usual Anti-Flicker setting.
+
+If tracking shows **Resource temporarily unavailable** or **timed out**, put
+Frame on, wait for its own tracking to wake up and leave the gamepad connected.
+If the error persists while wearing Frame, restart SteamVR. For a bug report,
+include the SteamOS channel, Anti-Flicker setting, and the time the error appeared.
+You can read the SteamVR log for the current boot in Konsole with
+`journalctl --user -b -u steamvr.service --since '10 minutes ago'`.
+
+If the error appeared in Konsole **during installation**, check the `Setup log`
+path printed by the install command. If another setup is running, let it finish
+before starting one again.
+
 ## Controls
 
 | Input | Action |

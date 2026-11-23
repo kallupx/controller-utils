@@ -294,7 +294,8 @@ class PalmBootstrap:
         self.previous = pose
         consecutive = (
             old is not None
-            and timestamp - old.time < 0.12
+            # A busy worker can skip several scene exposures between inferences.
+            and timestamp - old.time < 0.25
             and np.linalg.norm(led - old.led) < 0.08
             and np.trace(old.rotation.T @ pose.rotation) > 1 + 2 * math.cos(math.radians(25))
         )

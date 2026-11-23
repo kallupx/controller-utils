@@ -41,6 +41,13 @@ constexpr double TimerHz = 19200000.;
 constexpr size_t FrontViews = 2;
 constexpr size_t ViewCount = 4;
 
+// In 50/60 Hz lighting modes the scene follows IR by 21.62/24.95 ms respectively.
+constexpr bool scene_gap(double seconds) {
+    return seconds >= .020 && seconds <= .026;
+}
+static_assert(scene_gap(.021622) && scene_gap(.024955));
+static_assert(!scene_gap(.008378) && !scene_gap(.030) && !scene_gap(1. / 30));
+
 struct Camera {
     const char *name;
     const char *video_name;
@@ -260,11 +267,9 @@ class CameraHook {
         if (!sof)
             return;
         const double gap = sof - std::exchange(camera.last_sof, sof);
-        // shortcut: the 60 fps sensor mode uses 8.38 ms and 21.62 ms SOF gaps.
-        // Read the exposure registers if Valve adds another interleaving cadence.
         const bool ir = gap > .007 && gap < .010;
         const bool front = index < FrontViews;
-        if (!ir && (!front || gap < .020 || gap > .023))
+        if (!ir && (!front || !scene_gap(gap)))
             return;
         if (sof <= last_published[ir] + Tolerance)
             return;
