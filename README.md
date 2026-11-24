@@ -40,50 +40,27 @@ The app starts with SteamVR after its first launch. Change this in App settings.
 
 ## Troubleshooting tracking
 
-To send a debug log, open **Controller Utils → App**, turn on **Debug logging**,
-then reproduce the problem. Turn logging off to save the report, or select
-**Save log** while the issue is still happening. Attach the
-`controller-utils-debug-*.txt` file from **Downloads** to your bug report.
-You can open it first to see exactly what you're sharing.
-
-If the app won't reopen after you enabled logging, you can still save the
-report from Konsole:
-
-```sh
-python3 -IB ~/.local/share/controller-utils/app/optical/frame_debug.py save
-```
-
-Debug logging is off by default. Once enabled it stays on across app and headset
-restarts. A report keeps the latest 1,500 app events. It includes app and
-SteamOS versions, controller connection and tracking changes, camera frame
-counts, SteamVR camera errors, and setup or update failures. Camera images,
-tracking coordinates and typed text are excluded.
-For a first installation that fails before the app can open, use the **Setup log**
-path printed in Konsole.
-
 If v0.3.0 stays at **Palm + LED** with the LED visible in passthrough, try
 **SteamVR Settings → Camera → Anti-Flicker → 50Hz**. The released v0.3.0 misses
 the images it needs to see your hands when Frame uses 60Hz camera timing.
 After installing v0.3.1, you can restore your usual Anti-Flicker setting.
 
-If tracking is waiting for camera images, put Frame on, leave the gamepad
-connected and try Frame's own black-and-white passthrough. If passthrough or
-head tracking also fails, restart the headset. If both work and Controller
-Utils is still waiting, restart SteamVR. On v0.3.1, disconnecting the Arcturus
-Vision Camera can leave Controller Utils without images from the two front
-tracking cameras even while Frame's own tracking works. In a bug report,
-include whether Arcturus was connected, whether passthrough worked, the SteamOS
-channel, Anti-Flicker setting and time of the error. Frame's camera service
-writes its current log to `~/.local/share/Steam/logs/xrservice.txt`. You can
-read the app's SteamVR journal for the current boot in Konsole with
+If tracking shows **Resource temporarily unavailable** or **timed out**, put
+Frame on, wait for its own tracking to wake up and leave the gamepad connected.
+If the error persists while wearing Frame, restart SteamVR. For a bug report,
+include the SteamOS channel, Anti-Flicker setting, and the time the error appeared.
+You can read the SteamVR log for the current boot in Konsole with
 `journalctl --user -b -u steamvr.service --since '10 minutes ago'`.
 
-If setup reports missing SteamOS camera devices, restart Frame before using
-tracking. During v0.3.1 setup, **GPU device discovery failed** can appear even when the
-CPU palm model loads successfully. Look for **Controller Utils installed** at
-the end of setup. If setup failed, check the `Setup log`
+If the error appeared in Konsole **during installation**, check the `Setup log`
 path printed by the install command. If another setup is running, let it finish
 before starting one again.
+
+## Debug logs
+
+Turn on **Debug logging** in the **App** tab, reproduce the issue, then turn
+logging off. Attach the `controller-utils-debug-*.txt` file from **Downloads**
+to your bug report.
 
 ## Controls
 
