@@ -416,7 +416,11 @@ def main():
         current = json.loads((root / "release.json").read_bytes())
         operation = {"check": check, "apply": apply, "migrate": migrate}[mode]
         with (data / "frame-update.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("A Controller Utils update is already running.", file=sys.stderr)
+                return 1
             operation(root, data, channel, current)
     except (
         OSError,

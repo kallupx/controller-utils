@@ -8,6 +8,7 @@ import socket
 import struct
 import sys
 import time
+import traceback
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
@@ -16,6 +17,7 @@ os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 import frame_raw_camera as raw
 import numpy as np  # noqa: E402
+from frame_camera_runtime import camera_device_warning
 from frame_led_tracking import LedTracker, centroids
 from frame_palm_bootstrap import FramePalmModel, PalmBootstrap
 
@@ -192,6 +194,14 @@ class Parent:
                             )
                 elif op == "dark":
                     self.dark_since = msg["time"]
+                elif op == "request_ready":
+                    if track is not None:
+                        # The host hasn't armed the LED. Collect a fresh dark baseline after its reply.
+                        self.dark_since = None
+                        track.led = LedTracker(track.led.cameras)
+                        track.first_ir = track.enabled_at = None
+                        track.lit_requested = False
+                        emit("ready")
                 elif op == "lit" and track is not None:
                     track.enabled_at = msg["time"]
                 elif op == "reacquire" and track is not None:
@@ -213,20 +223,25 @@ class Parent:
 
 @contextmanager
 def camera_feed(headset, parent):
-    # XRService accepts connections from its capture loop, which pauses in standby.
-    deadline = time.monotonic() + 20
+    # XRService accepts readers from its capture loop, which can stay paused in standby.
+    next_notice = time.monotonic() + 2
+    last_notice = None
 
-    def waiting():
+    def waiting(message):
+        nonlocal next_notice, last_notice
         if not parent.poll(None):
             return False
-        if time.monotonic() >= deadline:
-            raise TimeoutError(
-                "Frame cameras did not start. Put on the headset to wake it. "
-                "If it is already awake, restart SteamVR."
-            )
+        if time.monotonic() >= next_notice:
+            message = camera_device_warning() or message
+            if message != last_notice:
+                emit("waiting", message=message)
+                last_notice = message
+            next_notice = time.monotonic() + 2
         return True
 
-    while waiting():
+    while waiting(
+        "Waiting for SteamVR to share its tracking cameras. Put Frame on or restart SteamVR."
+    ):
         with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as sock:
             sock.settimeout(1)
             try:
@@ -239,15 +254,28 @@ def camera_feed(headset, parent):
             )
             if uid != os.getuid():
                 raise ValueError("Camera provider belongs to a different user")
-            while waiting():
+            calibration = None
+            seq = -1
+            while waiting(
+                "Waiting for tracking-camera images. Put Frame on and check its own passthrough."
+            ):
                 if not select.select([sock], [], [], 0.1)[0]:
                     continue
                 try:
-                    calibration = raw.calibration(sock, headset)
-                except (ConnectionResetError, EOFError):
-                    break  # The camera service restarted during the handshake.
-                yield sock, *calibration
-                return
+                    if calibration is None:
+                        calibration = raw.calibration(sock, headset)
+                        continue
+                    seq, live = raw.frame(
+                        sock,
+                        calibration[0],
+                        seq,
+                        lambda kind, t, images: kind == 38 and -0.02 <= raw_time() - t <= 0.14,
+                    )
+                except EOFError:
+                    break  # A provider can exit after calibration but before the first IR image.
+                if live:
+                    yield sock, *calibration, seq
+                    return
     yield None
 
 
@@ -260,43 +288,66 @@ def main(headset):
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     with ExitStack() as stack:
+        busy = False
+        while parent.poll(None):
+            try:
+                model = stack.enter_context(FramePalmModel())
+                break
+            except BlockingIOError:
+                if not busy:
+                    emit(
+                        "waiting",
+                        message="SteamOS is busy. Waiting to start palm tracking. Close unused apps if this persists.",
+                    )
+                    busy = True
+                time.sleep(0.25)
+        else:
+            return
         feed = stack.enter_context(camera_feed(headset, parent))
         if feed is None:
             return
-        sock, cams, config = feed
-        model = stack.enter_context(FramePalmModel())
+        sock, cams, config, seq = feed
         pool = stack.enter_context(ThreadPoolExecutor(max_workers=1))
         track = CameraTracking(cams, config, model, pool)
         parent.last = time.monotonic()
         emit("ready")
-        seq = -1
-        last_frame = time.monotonic()
+        last_ir = time.monotonic()
 
         def consume(kind, t, images):
-            if (
-                parent.dark_since is None
-                or t < parent.dark_since
-                or not -0.02 <= raw_time() - t <= 0.14
-            ):
+            nonlocal last_ir
+            if not -0.02 <= raw_time() - t <= 0.14:
+                return []
+            if kind == 38:
+                last_ir = time.monotonic()
+            if parent.dark_since is None or t < parent.dark_since:
                 return []
             return track.exposure(
                 kind, t, images, lambda ts: -0.02 <= raw_time() - ts <= 0.14, borrowed=True
             )
 
         while parent.poll(track):
+            if time.monotonic() - last_ir > 5:
+                break
             if not select.select([sock], [], [], 0.05)[0]:
-                if time.monotonic() - last_frame > 5:
-                    raise TimeoutError("Live camera provider stopped sending frames")
                 continue
-            seq, events = raw.frame(sock, cams, seq, consume)
-            last_frame = time.monotonic()
+            try:
+                seq, events = raw.frame(sock, cams, seq, consume)
+            except EOFError:
+                break
             for event in events:
                 emit(**event)
+        else:
+            return
+    # All camera leases and the palm helper are released before asking the app to rearm.
+    emit("disconnected")
+    while parent.poll(None):
+        select.select([0], [], [], 0.1)
 
 
 if __name__ == "__main__":
     try:
         main(sys.argv[1])
     except Exception as exc:
+        traceback.print_exc()
         emit("error", message=str(exc))
         sys.exit(1)

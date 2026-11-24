@@ -4,6 +4,7 @@
 #include "platform/json.h"
 #include "acquisition.h"
 #include <memory>
+#include <stdexcept>
 
 namespace ct {
 json::Value tracking_feedback(double now, const std::string &state, const std::string &message,
@@ -19,6 +20,11 @@ struct TrackingResume {
     std::string headset_serial, controller_serial;
     Vector3 led, up;
     BodyPoseMessage pose;
+};
+
+struct CameraDisconnected : std::runtime_error {
+    CameraDisconnected()
+        : std::runtime_error("SteamVR camera stream interrupted. Reconnecting...") {}
 };
 
 class TrackingSessionView {

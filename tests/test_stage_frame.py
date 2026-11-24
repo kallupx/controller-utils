@@ -2,6 +2,7 @@ import ast
 import contextlib
 import io
 import json
+import os
 import runpy
 import sys
 import tempfile
@@ -22,6 +23,34 @@ def arm64_file(path):
 
 
 class FramePackageTest(unittest.TestCase):
+    def test_setup_requires_camera_socket_unless_kernel_devices_are_missing(self):
+        ready = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["ready"]
+        drivers = [
+            f"@controller-utils.{name}.v1.{os.getuid()}" for name in ("optical", "input", "beam")
+        ]
+        for warning, sockets, succeeds in [
+            (None, drivers, False),
+            (None, [*drivers, "/test/controller-utils-camera.sock"], True),
+            ("Restart Frame", drivers, True),
+            ("Restart Frame", drivers[:-1], False),
+        ]:
+            entries = "\n".join(f"0: 0 0 00010000 0 0 0 {name}" for name in sockets)
+            with (
+                self.subTest(warning=warning, sockets=sockets),
+                patch.dict(os.environ, XDG_RUNTIME_DIR="/test"),
+                patch("runpy.run_path", return_value={"camera_device_warning": lambda: warning}),
+                patch.object(Path, "read_text", return_value=entries),
+                patch("time.monotonic", side_effect=[0, 0, 91]),
+                patch("time.sleep"),
+                contextlib.redirect_stderr(io.StringIO()) as notice,
+            ):
+                if succeeds:
+                    ready()
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "connections"):
+                        ready()
+                self.assertEqual(notice.getvalue().strip(), warning or "")
+
     def test_concurrent_setup_explains_lock_and_allows_retry_after_release(self):
         setup_lock = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["setup_lock"]
         with tempfile.TemporaryDirectory() as directory:

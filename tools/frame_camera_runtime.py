@@ -21,6 +21,12 @@ def run(*args):
     subprocess.run(args, check=True, stdout=sys.stderr, stdin=subprocess.DEVNULL, timeout=180)
 
 
+def camera_device_warning():
+    devices = Path("/sys/class/video4linux")
+    if devices.is_dir() and not any(devices.glob("v4l-subdev*")):
+        return "SteamOS camera devices are missing. Restart Frame and check its own passthrough."
+
+
 def numpy_python(data):
     target = data / f"numpy-{NUMPY}-{sys.implementation.cache_tag}"
     python = target / "bin/python"

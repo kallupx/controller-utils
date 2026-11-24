@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import re
+import runpy
 import shutil
 import signal
 import stat
@@ -188,7 +189,13 @@ def ready():
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
     expected = {
         f"@controller-utils.{name}.v1.{os.getuid()}" for name in ("optical", "input", "beam")
-    } | {str(runtime / "controller-utils-camera.sock")}
+    }
+    camera_runtime = runpy.run_path(str(BASE / "app/optical/frame_camera_runtime.py"))
+    if warning := camera_runtime["camera_device_warning"]():
+        # XRService can abort before creating its socket when the kernel has no camera devices.
+        print(warning, file=sys.stderr, flush=True)
+    else:
+        expected.add(str(runtime / "controller-utils-camera.sock"))
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         entries = (

@@ -28,6 +28,7 @@ OpticalSession::OpticalSession(RuntimeView &r, std::shared_ptr<ControllerDevice>
       settings(options), imu(cal.body, device->serial(), cal.emitter),
       position(optical_smoothing(options)), serial(device->serial()) {
     started = last_imu = raw_time();
+    status = "Waiting for Frame's tracking cameras.";
     if (runtime.serial(0) != cal.headset_serial || !runtime.head_pose())
         throw std::runtime_error("Put the calibrated Frame on to start tracking.");
     if (saved && saved->headset_serial == cal.headset_serial && saved->controller_serial == serial)
@@ -189,7 +190,15 @@ void OpticalSession::observation(json_object *event, double now) {
     auto op = json::string(json::field(event, "op"));
     if (op == "error")
         throw std::runtime_error(json::string(json::field(event, "message")));
-    if (op == "ready" && !source_ready) {
+    if (op == "disconnected")
+        throw CameraDisconnected();
+    if (op == "waiting" && !source_ready) {
+        status = json::string(json::field(event, "message"));
+        return;
+    }
+    if (op == "ready") {
+        if (source_ready)
+            return;
         device->enable_imu();
         device->enable_ir(0);
         send_command("dark");
@@ -200,8 +209,10 @@ void OpticalSession::observation(json_object *event, double now) {
         return;
     }
     if (op == "light") {
-        if (!source_ready)
-            throw std::runtime_error("Camera feed has not started");
+        if (!source_ready) {
+            send_command("request_ready");
+            return;
+        }
         device->enable_ir(settings.brightness);
         lit = now;
         send_command("lit");
@@ -426,6 +437,11 @@ std::optional<BodyPoseMessage> OpticalSession::step(const std::vector<Controller
             }
         }
     }
+    const auto worker_exit = camera->exit_status();
+    for (const auto &event : camera->poll())
+        observation(event.get(), raw_time());
+    if (worker_exit)
+        throw std::runtime_error("Camera worker stopped.");
     if (source_ready && now - notified >= .015) {
         json::Value msg(json_object_new_object());
         json_object_object_add(msg.get(), "op", json_object_new_string("sample"));
@@ -462,10 +478,6 @@ std::optional<BodyPoseMessage> OpticalSession::step(const std::vector<Controller
         camera->send(msg.get());
         notified = now;
     }
-    for (const auto &event : camera->poll())
-        observation(event.get(), raw_time());
-    if (camera->exit_status())
-        throw std::runtime_error("Camera worker stopped.");
     if (source_ready && now - last_imu > .08) {
         if (now - last_imu > 5)
             throw std::runtime_error("Controller IMU stopped.");
@@ -592,8 +604,8 @@ std::optional<BodyPoseMessage> OpticalSession::step(const std::vector<Controller
             }
     }
     if (!source_ready)
-        status = "Waiting for a live tracking-camera provider.";
-    else if (resume && result)
+        return {};
+    if (resume && result)
         status = "Showing the last known gamepad position.";
     else
         status = result
