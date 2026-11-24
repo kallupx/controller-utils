@@ -339,14 +339,17 @@ def main(headset):
         stats_since = last_ir
         token, recording, _ = frame_debug.capture()
         ir = scene = stale = fixes = 0
+        ir_row_bytes = "none"
 
         def consume(kind, t, images):
-            nonlocal last_ir, ir, scene, stale, fixes
+            nonlocal last_ir, ir, scene, stale, fixes, ir_row_bytes
             if not -0.02 <= raw_time() - t <= 0.14:
                 if recording:
                     stale += 1
                 return []
             if recording:
+                if kind == 38 and ir == 0:
+                    ir_row_bytes = ",".join(str(im.strides[0]) for im in images.values())
                 ir += kind == 38
                 scene += kind != 38
             if kind == 38:
@@ -367,12 +370,13 @@ def main(headset):
                 if recording and active and token == current:
                     frame_debug.send(
                         token,
-                        f"Camera {now - stats_since:.1f}s ir={ir} scene={scene} stale={stale} "
+                        f"Camera {now - stats_since:.1f}s ir={ir} scene={scene} stale={stale} ir_row_bytes={ir_row_bytes} "
                         f"baseline_views={sum(n >= 5 for n in track.led.baselines.values())} "
                         f"led_fixes={fixes} lit={track.enabled_at is not None} palm_streak={track.palm.streak} aligned={track.seeded}",
                     )
                 token, recording, stats_since = current, active, now
                 ir = scene = stale = fixes = 0
+                ir_row_bytes = "none"
             if now - last_ir > 5:
                 frame_debug.record("Camera stream stalled: no fresh IR for five seconds")
                 break

@@ -69,11 +69,13 @@ After installing v0.3.1, you can restore your usual Anti-Flicker setting.
 If tracking is waiting for camera images, put Frame on, leave the gamepad
 connected and try Frame's own black-and-white passthrough. If passthrough or
 head tracking also fails, restart the headset. If both work and Controller
-Utils is still waiting, restart SteamVR. For a bug report, include whether
-passthrough worked, the SteamOS channel, Anti-Flicker setting and time of the
-error. Frame's camera service writes its current log to
-`~/.local/share/Steam/logs/xrservice.txt`. You can read the app's SteamVR
-journal for the current boot in Konsole with
+Utils is still waiting, restart SteamVR. On v0.3.1, disconnecting the Arcturus
+Vision Camera can leave Controller Utils without images from the two front
+tracking cameras even while Frame's own tracking works. In a bug report,
+include whether Arcturus was connected, whether passthrough worked, the SteamOS
+channel, Anti-Flicker setting and time of the error. Frame's camera service
+writes its current log to `~/.local/share/Steam/logs/xrservice.txt`. You can
+read the app's SteamVR journal for the current boot in Konsole with
 `journalctl --user -b -u steamvr.service --since '10 minutes ago'`.
 
 If setup reports missing SteamOS camera devices, restart Frame before using

@@ -210,8 +210,8 @@ class RawCameraTest(unittest.TestCase):
     def test_live_peer_close_and_stall_request_a_new_session(self):
         worker = self.worker
         fcntl.fcntl(self.fd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_SHRINK)
-        for case in ("scene", "stale", "quiet", "closed"):
-            if case in ("scene", "stale"):
+        for case in ("ir", "scene", "stale", "quiet", "closed"):
+            if case in ("ir", "scene", "stale"):
                 self.send(2, exposure="scene" if case == "scene" else "ir", timestamp=1)
             elif case == "closed":
                 self.sender.close()
@@ -233,14 +233,24 @@ class RawCameraTest(unittest.TestCase):
                     return_value=([self.receiver] if case != "quiet" else [], [], []),
                 ),
                 patch.object(worker, "raw_time", return_value=2 if case == "stale" else 1),
-                patch.object(worker.time, "monotonic", side_effect=[0, 0, 0, 0, 6]),
+                patch.object(
+                    worker.time,
+                    "monotonic",
+                    side_effect=[0, 0, 0, 0, 0, 6] if case == "ir" else [0, 0, 0, 0, 6],
+                ),
+                patch.object(worker.frame_debug, "capture", return_value=("1", case == "ir", 0)),
+                patch.object(worker.frame_debug, "send") as logged,
                 patch.object(worker, "emit") as emit,
             ):
                 worker.main("HEADSET")
             self.assertEqual(
                 [args.args[0] for args in emit.call_args_list], ["ready", "disconnected"]
             )
-            if case in ("scene", "stale"):
+            if case == "ir":
+                self.assertTrue(
+                    any("ir_row_bytes=4 " in call.args[1] for call in logged.call_args_list)
+                )
+            if case in ("ir", "scene", "stale"):
                 self.assertEqual(json.loads(self.sender.recv(64)), {"release": 2})
 
     def test_read_only_shared_backing_with_offset(self):

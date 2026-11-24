@@ -64,7 +64,11 @@ class FrameDebugTest(unittest.TestCase):
             older.write_text("09:00:00 FATAL ERROR: VIDIOC_STREAMOFF returned errno 90\n")
             os.utime(older, ns=(modified - 2000000, modified - 2000000))
             xr.write_text(
-                "09:14:00 Cached 5 camera paths room=PRIVATE\n09:14:01 FATAL ERROR: Couldn't get camera path for upper_left camera; private serial PRIVATE\nPRIVATE controller coordinates\n"
+                "09:14:00 Cached 5 camera paths room=PRIVATE\n"
+                "09:14:01 Received passthrough camera connection event (connected=0) PRIVATE\n"
+                "09:14:02 ISP enabled for tracking cameras (main VFE available) PRIVATE\n"
+                "09:14:03 FATAL ERROR: Couldn't get camera path for upper_left camera; private serial PRIVATE\n"
+                "PRIVATE controller coordinates\n"
             )
             settings = home / ".config/openvr/config/cv/xrservice/XRServiceSettings.json"
             settings.parent.mkdir(parents=True)
@@ -99,6 +103,8 @@ class FrameDebugTest(unittest.TestCase):
                 "Capture still active",
                 "Camera ready",
                 "registered cameras=5",
+                "passthrough accessory connected=0",
+                "tracking camera ISP=enabled",
                 "missing camera=upper_left",
                 "Tue Nov 24 2026 09:03:00 fatal operation=VIDIOC_STREAMON errno=11",
                 "Anti-Flicker mode=force60Hz",

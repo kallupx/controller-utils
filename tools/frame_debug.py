@@ -104,6 +104,12 @@ def xr_events(path):
             event = f"version={match[1]}"
         elif match := re.search(r"Cached (\d{1,2}) camera paths", line):
             event = f"registered cameras={match[1]}"
+        elif match := re.search(r"ISP (enabled|disabled) for tracking cameras", line):
+            event = f"tracking camera ISP={match[1]}"
+        elif match := re.search(
+            r"Received passthrough camera connection event \(connected=([01])\)", line
+        ):
+            event = f"passthrough accessory connected={match[1]}"
         elif match := re.search(r"Tracking cameras streaming (paused|resumed|started)", line):
             event = f"stream {match[1]}"
         elif "FATAL ERROR" in line:

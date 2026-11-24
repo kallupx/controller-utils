@@ -16,8 +16,10 @@
 #include <linux/videodev2.h>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <poll.h>
 #include <string>
+#include <string_view>
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -48,14 +50,56 @@ constexpr bool scene_gap(double seconds) {
 static_assert(scene_gap(.021622) && scene_gap(.024955));
 static_assert(!scene_gap(.008378) && !scene_gap(.030) && !scene_gap(1. / 30));
 
+struct LumaPlane {
+    uint32_t stride = 0, size = 0;
+
+    constexpr bool fits(unsigned width, unsigned height, size_t capacity) const {
+        return stride >= width && stride <= 8192 && size <= capacity && stride &&
+               height <= size / stride;
+    }
+};
+
+// Frame's CAMSS driver programs this layout independently of VIDIOC_G_FMT.bytesperline.
+struct CamssPlaneLayout {
+    uint32_t offset[4], stride[4], size[4];
+
+    constexpr LumaPlane linear_luma() const {
+        return offset[0] == 0 && !size[2] && !size[3] ? LumaPlane{stride[0], size[0]} : LumaPlane{};
+    }
+};
+constexpr auto SetPlaneLayout = _IOW('V', BASE_VIDIOC_PRIVATE + 6, CamssPlaneLayout);
+static_assert(CamssPlaneLayout{{0, 1179648}, {1152, 1152}, {1179648, 589824}}.linear_luma().fits(
+    1056, 1024, 1769472));
+static_assert(!LumaPlane{1152, 1056 * 1024}.fits(1056, 1024, 1769472));
+
+struct CameraRoute {
+    std::string_view grey, isp;
+
+    constexpr uint32_t format(std::string_view node) const {
+        if (node == grey)
+            return V4L2_PIX_FMT_GREY;
+        // When the ISP is available, the front cameras put grayscale in the NV12 luma plane.
+        return !isp.empty() && node == isp ? V4L2_PIX_FMT_NV12 : 0;
+    }
+};
+constexpr CameraRoute SlamRight{"msm_vfe3_video0", "msm_vfe0_video0"};
+constexpr CameraRoute SlamLeft{"msm_vfe4_video0", "msm_vfe1_video0"};
+static_assert(SlamRight.format("msm_vfe0_video0") == V4L2_PIX_FMT_NV12 &&
+              SlamLeft.format("msm_vfe1_video0") == V4L2_PIX_FMT_NV12 &&
+              SlamRight.format("msm_vfe3_video0") == V4L2_PIX_FMT_GREY &&
+              SlamLeft.format("msm_vfe4_video0") == V4L2_PIX_FMT_GREY &&
+              !SlamLeft.format("msm_vfe0_video0"));
+
 struct Camera {
     const char *name;
-    const char *video_name;
+    CameraRoute route;
     unsigned width, height;
     size_t dma_size;
     std::string serial;
     int device = -1;
     double last_sof = 0;
+    std::optional<LumaPlane> isp_luma = std::nullopt;
+    uint32_t stride = 0;
 };
 
 struct Backing {
@@ -68,6 +112,7 @@ struct View {
     FileDescriptor file, dma;
     ino_t inode = 0;
     uint64_t offset = 0;
+    uint32_t stride = 0;
     double time = 0;
     int device = -1;
     v4l2_buffer queue{};
@@ -133,10 +178,10 @@ class CameraHook {
     using Json = std::unique_ptr<json_object, decltype(&json_object_put)>;
     std::mutex mutex;
     std::array<Camera, ViewCount> cameras{{
-        {"slam_right", "msm_vfe3_video0", 1056, 1024, 1769472, {}},
-        {"slam_left", "msm_vfe4_video0", 1056, 1024, 1769472, {}},
-        {"upper_left", "msm_vfe2_video0", 640, 480, 462848, {}},
-        {"upper_right", "msm_vfe2_video1", 640, 480, 462848, {}},
+        {"slam_right", SlamRight, 1056, 1024, 1769472, {}},
+        {"slam_left", SlamLeft, 1056, 1024, 1769472, {}},
+        {"upper_left", {"msm_vfe2_video0", {}}, 640, 480, 462848, {}},
+        {"upper_right", {"msm_vfe2_video1", {}}, 640, 480, 462848, {}},
     }};
     std::unordered_map<int, Backing> backing;
     FileDescriptor lock, listener, reader, pidfd;
@@ -225,7 +270,7 @@ class CameraHook {
                 time += view.time / FrontViews;
             descriptors[i] = view.file.get();
             views += (i ? ",[\"" : "[\"") + cameras[i].serial + "\"," +
-                     std::to_string(cameras[i].width) + "," + std::to_string(view.offset) + "]";
+                     std::to_string(view.stride) + "," + std::to_string(view.offset) + "]";
         }
         const uint64_t seq = sequence + 1;
         std::string header = "{\"seq\":" + std::to_string(seq) +
@@ -288,7 +333,7 @@ class CameraHook {
         const auto source = backing.find(pixels.m.fd);
         struct stat dma{};
         if (source == backing.end() || pixels.data_offset ||
-            pixels.bytesused < camera.width * camera.height || fstat(pixels.m.fd, &dma) < 0 ||
+            pixels.bytesused < camera.stride * camera.height || fstat(pixels.m.fd, &dma) < 0 ||
             dma.st_ino != source->second.inode)
             return;
         FileDescriptor shared(fcntl(source->second.file.get(), F_DUPFD_CLOEXEC, 3));
@@ -301,6 +346,7 @@ class CameraHook {
         view.dma = std::move(lease);
         view.inode = dma.st_ino;
         view.offset = source->second.offset;
+        view.stride = camera.stride;
         view.time = time - (ir ? 0 : .00836);
         view.device = camera.device;
         publish(ir);
@@ -405,34 +451,55 @@ class CameraHook {
         auto next = ioctl_next();
         if (!listener || !arg)
             return next(fd, request, arg);
-        if (request == VIDIOC_REQBUFS) {
+        if (request == VIDIOC_S_FMT || request == SetPlaneLayout || request == VIDIOC_REQBUFS) {
             std::lock_guard guard(mutex);
             int result = next(fd, request, arg);
             const int error = errno;
-            auto &buffers = *static_cast<v4l2_requestbuffers *>(arg);
             struct stat dev{};
-            if (!result && buffers.type == Capture && !fstat(fd, &dev) && S_ISCHR(dev.st_mode) &&
-                major(dev.st_rdev) == 81) {
+            if (!result && !fstat(fd, &dev) && S_ISCHR(dev.st_mode) && major(dev.st_rdev) == 81) {
                 std::ifstream device_name("/sys/dev/char/81:" + std::to_string(minor(dev.st_rdev)) +
                                           "/name");
                 std::string video_name;
                 std::getline(device_name, video_name);
                 for (auto &camera : cameras) {
-                    if (video_name != camera.video_name)
-                        continue;
-                    if (buffers.count < MinBuffers || buffers.memory != V4L2_MEMORY_DMABUF) {
-                        camera.device = -1;
+                    const uint32_t pixel_format = camera.route.format(video_name);
+                    if (request != VIDIOC_REQBUFS) {
+                        if (pixel_format == V4L2_PIX_FMT_NV12) {
+                            if (request == SetPlaneLayout)
+                                camera.isp_luma =
+                                    static_cast<CamssPlaneLayout *>(arg)->linear_luma();
+                            else if (static_cast<v4l2_format *>(arg)->type == Capture)
+                                camera.isp_luma.reset();
+                        }
                         continue;
                     }
+                    const auto &buffers = *static_cast<v4l2_requestbuffers *>(arg);
+                    if (buffers.type != Capture)
+                        continue;
+                    // XRService reuses descriptor numbers when switching camera routes.
+                    if (camera.device == fd)
+                        camera.device = -1;
+                    if (!pixel_format || buffers.count < MinBuffers ||
+                        buffers.memory != V4L2_MEMORY_DMABUF)
+                        continue;
                     v4l2_format format{};
                     format.type = Capture;
-                    if (!next(fd, VIDIOC_G_FMT, &format) &&
-                        format.fmt.pix_mp.width == camera.width &&
-                        format.fmt.pix_mp.height == camera.height &&
-                        format.fmt.pix_mp.pixelformat == V4L2_PIX_FMT_GREY &&
-                        format.fmt.pix_mp.plane_fmt[0].bytesperline == camera.width &&
-                        format.fmt.pix_mp.num_planes == 2)
-                        camera.device = fd;
+                    const auto &pixels = format.fmt.pix_mp;
+                    if (next(fd, VIDIOC_G_FMT, &format) || pixels.width != camera.width ||
+                        pixels.height != camera.height || pixels.pixelformat != pixel_format ||
+                        pixels.num_planes != 2)
+                        continue;
+                    const auto &first = pixels.plane_fmt[0];
+                    const LumaPlane reported{first.bytesperline, first.sizeimage};
+                    const auto plane = pixel_format == V4L2_PIX_FMT_NV12
+                                           ? camera.isp_luma.value_or(reported)
+                                           : reported;
+                    if (!plane.fits(camera.width, camera.height,
+                                    std::min<size_t>(first.sizeimage, camera.dma_size)))
+                        continue;
+                    camera.device = fd;
+                    camera.stride = plane.stride;
+                    camera.last_sof = 0;
                 }
             }
             errno = error;
@@ -513,8 +580,8 @@ extern "C" __attribute__((visibility("default"))) int ioctl(int fd, unsigned lon
     const auto arg = va_arg(arguments, uintptr_t);
     va_end(arguments);
     const int previous = errno;
-    if (request == VIDIOC_REQBUFS || request == VIDIOC_DQBUF || request == VIDIOC_QBUF ||
-        request == VIDIOC_STREAMOFF) {
+    if (request == VIDIOC_S_FMT || request == SetPlaneLayout || request == VIDIOC_REQBUFS ||
+        request == VIDIOC_DQBUF || request == VIDIOC_QBUF || request == VIDIOC_STREAMOFF) {
         if (auto *hook = camera_hook()) {
             errno = previous;
             return hook->camera_ioctl(fd, request, reinterpret_cast<void *>(arg));
