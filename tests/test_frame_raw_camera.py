@@ -141,8 +141,10 @@ class RawCameraTest(unittest.TestCase):
                 patch.object(self.raw, "address", return_value=directory + "/missing.sock"),
                 patch("frame_camera_runtime.Path", return_value=Path(directory)),
                 patch.object(parent, "poll", side_effect=[True, True, False]),
-                patch.object(worker.time, "monotonic", side_effect=[0, 21, 21, 24, 24]),
-                patch.object(worker.time, "sleep"),
+                patch.object(worker.time, "monotonic", return_value=0) as clock,
+                patch.object(
+                    worker.time, "sleep", side_effect=lambda _: setattr(clock, "return_value", 21)
+                ),
                 patch.object(worker, "emit") as emit,
                 worker.camera_feed("HEADSET", parent) as feed,
             ):
@@ -161,7 +163,16 @@ class RawCameraTest(unittest.TestCase):
                 "FramePalmModel",
                 side_effect=[BlockingIOError(), BlockingIOError(), nullcontext()],
             ),
-            patch.object(worker.time, "sleep"),
+            patch.object(worker.time, "monotonic", return_value=0) as clock,
+            patch.object(
+                worker.time, "sleep", side_effect=lambda _: setattr(clock, "return_value", 11)
+            ),
+            patch.object(
+                worker.frame_debug,
+                "capture",
+                side_effect=lambda *_: ("123", clock.return_value > 0, 0),
+            ),
+            patch.object(worker.frame_debug, "send") as logged,
             patch.object(worker, "emit") as emit,
             patch.object(worker, "camera_feed", return_value=nullcontext(None)) as feed,
         ):
@@ -169,6 +180,9 @@ class RawCameraTest(unittest.TestCase):
         feed.assert_called_once()
         emit.assert_called_once()
         self.assertIn("palm tracking", emit.call_args.kwargs["message"])
+        self.assertEqual(
+            sum("Palm helper launch failed" in call.args[1] for call in logged.call_args_list), 1
+        )
 
     def test_request_ready_rearms_dark_baseline(self):
         worker = self.worker

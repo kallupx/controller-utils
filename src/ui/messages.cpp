@@ -52,8 +52,18 @@ std::optional<Command> command(json_object *object) {
     }
     if (op == "keyboard_typing" && fields == 2)
         return KeyboardTyping{boolean(object, "active")};
-    if (op == "app_info" && fields == 2)
-        return AppInfo{text(object, "version", 32)};
+    if (op == "app_info" && (fields == 2 || fields == 3)) {
+        AppInfo info{};
+        info.version = text(object, "version", 32);
+        if (fields == 3) {
+            const auto debug = field(object, "debug");
+            info.recording = boolean(debug, "recording");
+            info.debug_available = boolean(debug, "available");
+            info.debug_busy = boolean(debug, "busy");
+            info.debug_message = text(debug, "message", 200);
+        }
+        return info;
+    }
     if (op == "status") {
         const double light = number(field(object, "brightness"));
         const double blend = number(field(object, "smoothing_ms"));

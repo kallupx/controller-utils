@@ -15,6 +15,7 @@ from contextlib import ExitStack, contextmanager
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
+import frame_debug
 import frame_raw_camera as raw
 import numpy as np  # noqa: E402
 from frame_camera_runtime import camera_device_warning
@@ -27,6 +28,8 @@ def raw_time():
 
 
 def emit(op, **fields):
+    if op in ("waiting", "ready", "light", "seed", "disconnected"):
+        frame_debug.record("Camera " + op + (" " + fields["message"] if op == "waiting" else ""))
     print(json.dumps(dict(op=op, **fields), allow_nan=False), flush=True)
 
 
@@ -193,6 +196,7 @@ class Parent:
                                 (msg["time"], (point - track.head[:, 3]) @ track.head[:, :3])
                             )
                 elif op == "dark":
+                    frame_debug.record("Controller LED off for baseline")
                     self.dark_since = msg["time"]
                 elif op == "request_ready":
                     if track is not None:
@@ -203,6 +207,7 @@ class Parent:
                         track.lit_requested = False
                         emit("ready")
                 elif op == "lit" and track is not None:
+                    frame_debug.record("Controller LED on")
                     track.enabled_at = msg["time"]
                 elif op == "reacquire" and track is not None:
                     track.reacquire()
@@ -226,6 +231,8 @@ def camera_feed(headset, parent):
     # XRService accepts readers from its capture loop, which can stay paused in standby.
     next_notice = time.monotonic() + 2
     last_notice = None
+    connect_errno = None
+    next_error_log = 0
 
     def waiting(message):
         nonlocal next_notice, last_notice
@@ -246,9 +253,15 @@ def camera_feed(headset, parent):
             sock.settimeout(1)
             try:
                 sock.connect(str(raw.address()))
-            except (FileNotFoundError, ConnectionRefusedError, BlockingIOError):
+            except (FileNotFoundError, ConnectionRefusedError, BlockingIOError) as error:
+                now = time.monotonic()
+                if connect_errno != error.errno or now >= next_error_log:
+                    frame_debug.failure("Connecting to camera provider", error)
+                    connect_errno = error.errno
+                    next_error_log = now + 10
                 time.sleep(0.1)
                 continue
+            connect_errno = None
             _, uid, _ = struct.unpack(
                 "3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
             )
@@ -264,6 +277,9 @@ def camera_feed(headset, parent):
                 try:
                     if calibration is None:
                         calibration = raw.calibration(sock, headset)
+                        frame_debug.record(
+                            f"Camera calibration accepted views={len(calibration[0])}"
+                        )
                         continue
                     seq, live = raw.frame(
                         sock,
@@ -272,6 +288,7 @@ def camera_feed(headset, parent):
                         lambda kind, t, images: kind == 38 and -0.02 <= raw_time() - t <= 0.14,
                     )
                 except EOFError:
+                    frame_debug.record("Camera provider closed during startup")
                     break  # A provider can exit after calibration but before the first IR image.
                 if live:
                     yield sock, *calibration, seq
@@ -288,12 +305,19 @@ def main(headset):
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     with ExitStack() as stack:
+        frame_debug.record("Camera worker starting")
         busy = False
+        next_error_log = 0
         while parent.poll(None):
             try:
                 model = stack.enter_context(FramePalmModel())
+                frame_debug.record("Palm helper started")
                 break
-            except BlockingIOError:
+            except BlockingIOError as exc:
+                now = time.monotonic()
+                if now >= next_error_log:
+                    frame_debug.failure("Palm helper launch", exc)
+                    next_error_log = now + 10
                 if not busy:
                     emit(
                         "waiting",
@@ -312,27 +336,52 @@ def main(headset):
         parent.last = time.monotonic()
         emit("ready")
         last_ir = time.monotonic()
+        stats_since = last_ir
+        token, recording, _ = frame_debug.capture()
+        ir = scene = stale = fixes = 0
 
         def consume(kind, t, images):
-            nonlocal last_ir
+            nonlocal last_ir, ir, scene, stale, fixes
             if not -0.02 <= raw_time() - t <= 0.14:
+                if recording:
+                    stale += 1
                 return []
+            if recording:
+                ir += kind == 38
+                scene += kind != 38
             if kind == 38:
                 last_ir = time.monotonic()
             if parent.dark_since is None or t < parent.dark_since:
                 return []
-            return track.exposure(
+            events = track.exposure(
                 kind, t, images, lambda ts: -0.02 <= raw_time() - ts <= 0.14, borrowed=True
             )
+            if recording and track.fix is not None and kind == 38 and track.fix[0] == t:
+                fixes += 1
+            return events
 
         while parent.poll(track):
-            if time.monotonic() - last_ir > 5:
+            now = time.monotonic()
+            if now - stats_since >= 5:
+                current, active, _ = frame_debug.capture()
+                if recording and active and token == current:
+                    frame_debug.send(
+                        token,
+                        f"Camera {now - stats_since:.1f}s ir={ir} scene={scene} stale={stale} "
+                        f"baseline_views={sum(n >= 5 for n in track.led.baselines.values())} "
+                        f"led_fixes={fixes} lit={track.enabled_at is not None} palm_streak={track.palm.streak} aligned={track.seeded}",
+                    )
+                token, recording, stats_since = current, active, now
+                ir = scene = stale = fixes = 0
+            if now - last_ir > 5:
+                frame_debug.record("Camera stream stalled: no fresh IR for five seconds")
                 break
             if not select.select([sock], [], [], 0.05)[0]:
                 continue
             try:
                 seq, events = raw.frame(sock, cams, seq, consume)
             except EOFError:
+                frame_debug.record("Camera provider disconnected while streaming")
                 break
             for event in events:
                 emit(**event)
@@ -348,6 +397,7 @@ if __name__ == "__main__":
     try:
         main(sys.argv[1])
     except Exception as exc:
+        frame_debug.failure("Camera worker", exc)
         traceback.print_exc()
         emit("error", message=str(exc))
         sys.exit(1)

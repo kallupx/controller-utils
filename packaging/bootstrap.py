@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,7 @@ REPO = "kallupx/controller-utils"
 RELEASES = f"https://github.com/{REPO}/releases"
 API = f"https://api.github.com/repos/{REPO}/releases?per_page=30"
 LIMIT = 128 * 1024 * 1024
+DEBUG = None
 VERSION = r"[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}"
 PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAgOeA07dV3lAIKraJnLObYbJJTd7F/n6YTLvCmnq4Xfo=
@@ -154,6 +156,8 @@ def choose_release(directory, channel):
 
 
 def save_status(data, channel, state, message):
+    if DEBUG:
+        DEBUG["record"](f"Updater channel={channel} state={state}: {message}", data)
     with tempfile.NamedTemporaryFile(mode="w", dir=data, delete=False) as out:
         path = Path(out.name)
         try:
@@ -393,9 +397,21 @@ def bootstrap(arguments):
 
 
 def main():
+    global DEBUG
+    base = Path.home() / ".local/share/controller-utils"
+    if os.geteuid() != 0 and (base / "app-data/debug-capture.json").is_file():
+        try:
+            DEBUG = runpy.run_path(str(base / "app/optical/frame_debug.py"))
+        except OSError:
+            pass  # The standalone installer also supports older installations.
     if len(sys.argv) < 2 or sys.argv[1] not in ("check", "apply", "migrate"):
         try:
-            return bootstrap(sys.argv[1:])
+            if DEBUG:
+                DEBUG["record"]("Terminal setup started")
+            result = bootstrap(sys.argv[1:])
+            if DEBUG:
+                DEBUG["record"](f"Terminal setup exit={result}")
+            return result
         except (
             OSError,
             ValueError,
@@ -405,6 +421,8 @@ def main():
             tarfile.TarError,
             subprocess.SubprocessError,
         ) as error:
+            if DEBUG:
+                DEBUG["failure"]("Terminal setup", error)
             print(f"Controller Utils: {error}", file=sys.stderr)
             return 1
     mode = sys.argv[1]
@@ -418,7 +436,9 @@ def main():
         with (data / "frame-update.lock").open("a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+            except BlockingIOError as error:
+                if DEBUG:
+                    DEBUG["failure"]("Updater " + mode + " lock", error, data)
                 print("A Controller Utils update is already running.", file=sys.stderr)
                 return 1
             operation(root, data, channel, current)
@@ -430,6 +450,8 @@ def main():
         tarfile.TarError,
         subprocess.SubprocessError,
     ) as error:
+        if DEBUG:
+            DEBUG["failure"]("Updater " + mode, error, data)
         print(f"Controller Utils update: {error}", file=sys.stderr)
         message = "Couldn’t install the update. Check for updates to retry."
         if sys.argv[1] == "check":

@@ -132,6 +132,8 @@ bool Application::action(json_object *event) {
         host_.save(options_);
     } else if (name == "check_updates" || name == "apply_update") {
         host_.update(name == "apply_update");
+    } else if (name == "debug_logging" || name == "save_debug_log") {
+        host_.debug_action(name == "save_debug_log");
     } else if (name == "input_toggle")
         send_op("input_toggle");
     else if (name == "pinned") {
@@ -403,6 +405,8 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
         last_keyboard_log_ = now;
     }
     if (now - last_status_ >= .2) {
+        host_.debug_state(awake, connected, bool(session_), session_ && session_->acquired(),
+                          status_);
         if (!session_) {
             if (options_.tracking_enabled && connected && awake && now < retry_)
                 host_.send(tracking_feedback(raw_(), "error",

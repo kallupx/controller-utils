@@ -12,7 +12,7 @@ NativeApplicationHost::NativeApplicationHost(Runtime &runtime, ControllerReader 
                                              std::filesystem::path root, std::filesystem::path data,
                                              ChildFactory children, SteamUiFactory steam_ui)
     : runtime_(runtime), reader_(reader), lock_(lock), presentation_(presentation),
-      root_(std::move(root)), data_(std::move(data)),
+      root_(std::move(root)), data_(std::move(data)), debug_(data_),
       version_(json::string(
           json::field(json::parse(read_file(root_ / "release.json", 65536)).get(), "version"))),
       children_(children
@@ -29,6 +29,8 @@ NativeApplicationHost::NativeApplicationHost(Runtime &runtime, ControllerReader 
     if (!lock_.primary())
         throw std::logic_error("Controller Utils requires its exclusive lifetime lock");
     registration_.identify();
+    if (debug_.recording())
+        debug_.event("App started version=" + version_);
 }
 NativeApplicationHost::~NativeApplicationHost() {
     try {
@@ -58,6 +60,11 @@ std::vector<json::Value> NativeApplicationHost::events() {
 }
 void NativeApplicationHost::save(const Settings &options) {
     save_settings(data_ / "settings.json", options);
+    if (debug_.recording())
+        debug_.event("Settings tracking=" + std::to_string(options.tracking_enabled) +
+                     " brightness=" + std::to_string(options.brightness) +
+                     " smoothing_ms=" + std::to_string(options.smoothing_ms) +
+                     " updates=" + std::to_string(options.automatic_updates));
 }
 void NativeApplicationHost::autostart(bool enabled) {
     registration_.autostart(enabled);
@@ -214,7 +221,23 @@ std::optional<std::string> NativeApplicationHost::keyboard_error() {
 json::Value NativeApplicationHost::app_info() {
     auto value = json::parse(R"({"op":"app_info"})");
     json_object_object_add(value.get(), "version", json_object_new_string(version_.c_str()));
+    json_object_object_add(value.get(), "debug", debug_.info().release());
     return value;
+}
+void NativeApplicationHost::debug_action(bool save) {
+    const bool starting = !save && !debug_.recording();
+    debug_.action(save, children_);
+    if (starting && debug_.recording()) {
+        const auto version = runtime_.system->GetRuntimeVersion();
+        debug_.event("SteamVR runtime=" + std::string(version ? version : "unknown"));
+    }
+}
+void NativeApplicationHost::debug_state(bool awake, bool connected, bool session, bool acquired,
+                                        const std::string &status) {
+    if (debug_.recording())
+        debug_.state("Tracking head_pose=" + std::to_string(awake) + " controller=" +
+                     std::to_string(connected) + " session=" + std::to_string(session) +
+                     " aligned=" + std::to_string(acquired) + " " + status);
 }
 void NativeApplicationHost::update(bool apply) {
     const auto script = root_ / "frame_update.py";
@@ -288,6 +311,8 @@ json::Value NativeApplicationHost::update_info(bool automatic, bool idle) {
 }
 void NativeApplicationHost::log(const std::string &message) {
     std::cerr << message << '\n';
+    if (debug_.recording() && !message.empty() && message.front() != '{')
+        debug_.event("App error: " + message);
 }
 void NativeApplicationHost::close_keyboard() {
     auto request = std::move(keyboard_);
@@ -298,6 +323,7 @@ void NativeApplicationHost::close() {
     if (closed_)
         return;
     closed_ = true;
+    debug_.event("App stopping");
     camera_switch_.reset();
     std::exception_ptr failure;
     const auto attempt = [&](const auto &operation) {

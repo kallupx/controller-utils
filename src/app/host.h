@@ -1,5 +1,6 @@
 #pragma once
 #include "application.h"
+#include "debug_log.h"
 #include "instance.h"
 #include "registration.h"
 #include "controller/reader.h"
@@ -15,6 +16,7 @@ class NativeApplicationHost final : public ApplicationHost {
     const ApplicationLock &lock_;
     ui::Presentation &presentation_;
     std::filesystem::path root_, data_;
+    DebugLog debug_;
     std::string version_;
     ChildFactory children_;
     SteamUiFactory steam_ui_;
@@ -56,6 +58,9 @@ class NativeApplicationHost final : public ApplicationHost {
     json::Value app_info() override;
     json::Value update_info(bool automatic, bool idle) override;
     void update(bool apply) override;
+    void debug_action(bool save) override;
+    void debug_state(bool awake, bool connected, bool session, bool acquired,
+                     const std::string &status) override;
     void log(const std::string &message) override;
     void close_keyboard();
     void close();

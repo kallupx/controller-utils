@@ -19,6 +19,8 @@ struct Dashboard {
     bool autostart = true, input_enabled = false, pinned = true, show_requested = false;
     bool capturing = false;
     std::string app_version = "Development";
+    bool debug_recording = false, debug_available = false, debug_busy = false;
+    std::string debug_message;
     std::optional<ct::ui::SoftwareUpdate> update;
     std::string input_state = "Off";
     bool steam_shortcuts = true;
@@ -35,7 +37,7 @@ struct Dashboard {
         const char *action;
         const char *label;
     };
-    const Button buttons[17] = {
+    static constexpr Button buttons[] = {
         {280, 136, content_width, 96, 0, Switch, "toggle", ""},
         {280, 256, 440, 64, 0, Action, "recenter", "Realign"},
         {736, 256, 440, 64, 0, Action, "acquire", "Restart tracking"},
@@ -49,6 +51,8 @@ struct Dashboard {
         {280, 372, content_width, 80, 2, Switch, "automatic_updates", ""},
         {908, 480, 244, 60, 2, Action, "check_updates", "Check for updates"},
         {908, 480, 244, 60, 2, Action, "apply_update", "Install update"},
+        {280, 574, content_width, 80, 2, Switch, "debug_logging", ""},
+        {952, 660, 224, 52, 2, Action, "save_debug_log", "Save log"},
         {16, 140, 224, 64, -1, Navigation, "tracking_tab", "Tracking"},
         {16, 212, 224, 64, -1, Navigation, "controls_tab", "Controls"},
         {16, 284, 224, 64, -1, Navigation, "app_tab", "App"},
@@ -122,8 +126,14 @@ struct Dashboard {
             return true;
         }
         if (const auto info = std::get_if<ct::ui::AppInfo>(&command)) {
-            dirty |= app_version != info->version;
+            dirty |= app_version != info->version || debug_recording != info->recording ||
+                     debug_available != info->debug_available || debug_busy != info->debug_busy ||
+                     debug_message != info->debug_message;
             app_version = info->version;
+            debug_recording = info->recording;
+            debug_available = info->debug_available;
+            debug_busy = info->debug_busy;
+            debug_message = info->debug_message;
             return true;
         }
         const auto next = std::get_if<ct::ui::Status>(&command);
@@ -183,6 +193,8 @@ struct Dashboard {
             return smoothing < 150;
         if (action == "automatic_updates")
             return bool(update);
+        if (action == "debug_logging" || action == "save_debug_log")
+            return !debug_busy && (action == "debug_logging" || debug_available);
         if (action == "check_updates" || action == "apply_update")
             return update && !update->busy && update->ready == (action == "apply_update");
         return true;
@@ -362,7 +374,7 @@ struct Dashboard {
         text(c, 280, 101,
              page == 0 ? "Automatically track your connected Steam Controller"
                        : (page == 1 ? "Navigate Steam and your desktop"
-                                    : "Startup, taskbar and software updates"),
+                                    : "Startup, updates and troubleshooting"),
              21, 0x8b929a);
         if (page == 0) {
             row(c, 136, "Enable tracking", "");
@@ -410,6 +422,10 @@ struct Dashboard {
             pair(c, 304, 458, 580, 104, "Version " + app_version,
                  update ? update->message : "Install a package for your SteamOS channel to update.",
                  25, 21, 0xdcdedf, 0xb8bcbf);
+            row(c, 574, "Debug logging", "Turn off after reproducing the issue to save a log.", 80);
+            wrapped(c, 280, 681,
+                    debug_message.empty() ? "Debug logs are saved in Downloads." : debug_message,
+                    650, 2, 18);
         }
         rectangle(c, 256, 724, width - 256, 1, 0x3d4450);
         centered(c, 280, 724, 640, 76, "Steam Controller for Steam Frame", 20, 0x8b929a, true);
@@ -425,8 +441,9 @@ struct Dashboard {
             const bool focus = hovered == b.action && available(b);
             if (b.kind == Switch) {
                 const bool on =
-                    action == "toggle"      ? enabled
-                    : action == "autostart" ? autostart
+                    action == "toggle"          ? enabled
+                    : action == "autostart"     ? autostart
+                    : action == "debug_logging" ? debug_recording
                     : action == "automatic_updates"
                         ? update->automatic
                         : (action == "pinned"

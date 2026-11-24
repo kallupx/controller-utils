@@ -24,6 +24,8 @@ struct Status {
 };
 struct AppInfo {
     std::string version;
+    bool recording = false, debug_available = false, debug_busy = false;
+    std::string debug_message;
 };
 struct Controls {
     double time;

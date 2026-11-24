@@ -89,6 +89,10 @@ def main():
         python = numpy_python(optical.parents[1] / "app-data")
         os.execv(python, [python, "-Bu", optical / "frame_camera_worker.py", sys.argv[1]])
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        sys.path.insert(0, str(optical))
+        from frame_debug import failure
+
+        failure("Camera Python startup", error)
         print(
             json.dumps(dict(op="error", message=f"Camera Python setup failed: {error}")), flush=True
         )

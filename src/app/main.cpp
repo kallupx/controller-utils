@@ -9,6 +9,7 @@
 int main(int argc, char **argv) {
     if (argc == 2 && std::string(argv[1]) == "--camera-switch-worker")
         return ct::camera_switch_worker();
+    std::filesystem::path data;
     try {
         const bool registration = argc == 2 && (std::string(argv[1]) == "--register" ||
                                                 std::string(argv[1]) == "--unregister" ||
@@ -20,7 +21,8 @@ int main(int argc, char **argv) {
                 "[--show|--background|--register|--unregister|--prepare-registration]");
         umask(0077);
         const auto executable = std::filesystem::canonical("/proc/self/exe");
-        const auto root = executable.parent_path(), data = root.parent_path() / "app-data";
+        const auto root = executable.parent_path();
+        data = root.parent_path() / "app-data";
         ct::SignalQueue signals{SIGUSR1, SIGTERM, SIGINT, SIGHUP};
         ct::ApplicationLock lock(data / "app.lock");
         if (registration) {
@@ -94,6 +96,8 @@ int main(int argc, char **argv) {
             std::rethrow_exception(control_failure);
         return 0;
     } catch (const std::exception &error) {
+        if (!data.empty())
+            ct::DebugLog(data).event("App failed: " + std::string(error.what()));
         std::cerr << "Controller Utils: " << error.what() << '\n';
         return 1;
     }
