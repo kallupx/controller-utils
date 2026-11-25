@@ -47,7 +47,7 @@ OPTICAL_FILES = (
     "frame_palm_bootstrap.py",
     "frame_camera_calibration.py",
 )
-STEAMOS_BUILDS = {"stable": "20261022.6150929", "beta": "20261118.6185655"}
+STEAMOS_BUILDS = {"stable": "20261022.6150929", "beta": "20261125.6090751"}
 
 
 def read_source(path, limit=MAX_CONTENTS):

@@ -99,22 +99,30 @@ static_assert(CamssPlaneLayout{{0, 1179648}, {1152, 1152}, {1179648, 589824}}.li
 static_assert(!LumaPlane{1152, 1056 * 1024}.fits(1056, 1024, 1769472));
 
 struct CameraRoute {
-    std::string_view grey, isp;
+    std::string_view grey, alternate;
+    uint32_t alternate_format;
 
     constexpr uint32_t format(std::string_view node) const {
         if (node == grey)
             return V4L2_PIX_FMT_GREY;
-        // When the ISP is available, the front cameras put grayscale in the NV12 luma plane.
-        return !isp.empty() && node == isp ? V4L2_PIX_FMT_NV12 : 0;
+        return node == alternate ? alternate_format : 0;
     }
 };
-constexpr CameraRoute SlamRight{"msm_vfe3_video0", "msm_vfe0_video0"};
-constexpr CameraRoute SlamLeft{"msm_vfe4_video0", "msm_vfe1_video0"};
+constexpr CameraRoute SlamRight{"msm_vfe3_video0", "msm_vfe0_video0", V4L2_PIX_FMT_NV12};
+constexpr CameraRoute SlamLeft{"msm_vfe4_video0", "msm_vfe1_video0", V4L2_PIX_FMT_NV12};
+// Without FPGA interleaving, the 640x480 upper cameras can use the fronts' grayscale nodes.
+constexpr CameraRoute UpperLeft{"msm_vfe2_video0", SlamLeft.grey, V4L2_PIX_FMT_GREY};
+constexpr CameraRoute UpperRight{"msm_vfe2_video1", SlamRight.grey, V4L2_PIX_FMT_GREY};
 static_assert(SlamRight.format("msm_vfe0_video0") == V4L2_PIX_FMT_NV12 &&
               SlamLeft.format("msm_vfe1_video0") == V4L2_PIX_FMT_NV12 &&
               SlamRight.format("msm_vfe3_video0") == V4L2_PIX_FMT_GREY &&
               SlamLeft.format("msm_vfe4_video0") == V4L2_PIX_FMT_GREY &&
               !SlamLeft.format("msm_vfe0_video0"));
+static_assert(UpperLeft.format("msm_vfe2_video0") == V4L2_PIX_FMT_GREY &&
+              UpperRight.format("msm_vfe2_video1") == V4L2_PIX_FMT_GREY &&
+              UpperLeft.format("msm_vfe4_video0") == V4L2_PIX_FMT_GREY &&
+              UpperRight.format("msm_vfe3_video0") == V4L2_PIX_FMT_GREY &&
+              !UpperLeft.format("msm_vfe3_video0") && !UpperRight.format("msm_vfe4_video0"));
 
 struct Camera {
     const char *name;
@@ -205,8 +213,8 @@ class CameraHook {
     std::array<Camera, ViewCount> cameras{{
         {"slam_right", SlamRight, 1056, 1024, 1769472, {}},
         {"slam_left", SlamLeft, 1056, 1024, 1769472, {}},
-        {"upper_left", {"msm_vfe2_video0", {}}, 640, 480, 462848, {}},
-        {"upper_right", {"msm_vfe2_video1", {}}, 640, 480, 462848, {}},
+        {"upper_left", UpperLeft, 640, 480, 462848, {}},
+        {"upper_right", UpperRight, 640, 480, 462848, {}},
     }};
     std::unordered_map<int, Backing> backing;
     FileDescriptor lock, listener, reader, pidfd;

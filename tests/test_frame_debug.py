@@ -68,6 +68,8 @@ class FrameDebugTest(unittest.TestCase):
                 "09:14:01 Received passthrough camera connection event (connected=0) PRIVATE\n"
                 "09:14:02 ISP enabled for tracking cameras (main VFE available) PRIVATE\n"
                 "09:14:02 Setting up cameras camerasToUse: 1111 PRIVATE\n"
+                "09:14:02 Upper cameras FPGA interleaving support: 1 (Driver features available = 1 | VCINT loaded = 1) PRIVATE\n"
+                "09:14:02 Upper cameras FPGA interleaving support: 0 (Driver features available = 1 | VCINT loaded = 0) PRIVATE\n"
                 "09:14:02 Set upper camera driver not in-sync PRIVATE\n"
                 "09:14:03 FATAL ERROR: Couldn't get camera path for upper_left camera; private serial PRIVATE\n"
                 "PRIVATE controller coordinates\n"
@@ -108,6 +110,8 @@ class FrameDebugTest(unittest.TestCase):
                 "passthrough accessory connected=0",
                 "tracking camera ISP=enabled",
                 "tracking camera mask=1111",
+                "upper camera FPGA interleaving=1 driver_features=1 vcint_loaded=1",
+                "upper camera FPGA interleaving=0 driver_features=1 vcint_loaded=0",
                 "upper cameras not in-sync",
                 "missing camera=upper_left",
                 "Tue Nov 24 2026 09:03:00 fatal operation=VIDIOC_STREAMON errno=11",

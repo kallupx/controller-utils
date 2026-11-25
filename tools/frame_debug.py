@@ -108,6 +108,12 @@ def xr_events(path):
             event = f"tracking camera ISP={match[1]}"
         elif match := re.search(r"Setting up cameras camerasToUse: ([01]{4})\b", line):
             event = f"tracking camera mask={match[1]}"
+        elif match := re.search(
+            r"Upper cameras FPGA interleaving support: ([01]) "
+            r"\(Driver features available = ([01]) \| VCINT loaded = ([01])\)",
+            line,
+        ):
+            event = f"upper camera FPGA interleaving={match[1]} driver_features={match[2]} vcint_loaded={match[3]}"
         elif match := re.search(r"Set upper camera driver (not in-sync|in-sync)\b", line):
             event = f"upper cameras {match[1]}"
         elif match := re.search(
