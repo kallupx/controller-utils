@@ -1,5 +1,6 @@
 #pragma once
 #include "report.h"
+#include "bluetooth.h"
 #include "platform/linux/resource.h"
 #include <array>
 #include <filesystem>
@@ -18,11 +19,18 @@ class HidTransport {
     virtual std::optional<std::vector<uint8_t>> receive(double timeout) = 0;
     virtual double now() = 0;
     virtual void wait(double seconds) = 0;
+    virtual bool menu_reports(bool) {
+        return false;
+    }
     virtual void close() noexcept = 0;
 };
 
 class LinuxHidTransport final : public HidTransport {
     FileDescriptor descriptor_;
+    BluetoothReports menu_;
+    uint8_t hid_report_ = 0;
+    double menu_retry_ = 0, menu_started_ = 0;
+    bool bluetooth_ = false;
 
   public:
     static std::filesystem::path discover(ControllerConnection connection,
@@ -34,6 +42,7 @@ class LinuxHidTransport final : public HidTransport {
     std::optional<std::vector<uint8_t>> receive(double timeout) override;
     double now() override;
     void wait(double seconds) override;
+    bool menu_reports(bool enabled) override;
     void close() noexcept override;
 };
 
@@ -59,6 +68,9 @@ class ControllerDevice {
     ~ControllerDevice();
     std::string serial();
     std::optional<ControllerInput> read(double timeout);
+    bool menu_reports(bool enabled) {
+        return !closed_ && transport_->menu_reports(enabled);
+    }
     void enable_imu();
     void resume_imu();
     void enable_ir(unsigned brightness = 100);

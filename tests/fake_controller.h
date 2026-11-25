@@ -14,6 +14,7 @@
 
 namespace ct::test {
 struct FakeState {
+    bool bluetooth_menu_available = false, bluetooth_menu_active = false;
     double time = 1;
     bool raw = false, ignore_disable = false, reports = true;
     unsigned brightness = 25, feature_misses = 0, feature_reads = 0, closed = 0;
@@ -83,6 +84,9 @@ class FakeTransport final : public ct::HidTransport {
     }
     void wait(double seconds) override {
         state->time += seconds;
+    }
+    bool menu_reports(bool enabled) override {
+        return state->bluetooth_menu_active = enabled && state->bluetooth_menu_available;
     }
     void close() noexcept override {
         ++state->closed;

@@ -151,7 +151,7 @@ GateLayout resolve_beam_reviewed(const std::string &bytes,
         std::memcpy(result->payload.data() + 16, &load, 4);
     }
     if (!result)
-        throw std::runtime_error("native beam method signature mismatch");
+        throw UnsupportedBeamLayout();
     return *result;
 }
 GateLayout resolve_gate_layout(GateKind kind, const std::string &bytes) {

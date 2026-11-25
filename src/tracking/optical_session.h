@@ -31,6 +31,7 @@ class OpticalSession final : public TrackingSessionView {
         std::optional<int> filter_index;
         uint32_t buttons = 0;
         bool enabled = false, typing = false, native_active = false, activation_confirmed = false;
+        bool gamepad_neutral = false;
         bool filter_requested = false, filter_active = false, filter_typing = false;
     } input;
     std::unique_ptr<SteamUiSession> filter;
@@ -41,12 +42,13 @@ class OpticalSession final : public TrackingSessionView {
            filter_epoch = 0, last_rendered_orientation = 0, last_rendered_fix = 0,
            last_presentation = 0;
     bool closed = false, source_ready = false;
-    double gate_sent = 0, gate_confirmed = 0, beam_sent = 0, imu_retry = 0;
+    double gate_sent = 0, gate_confirmed = 0, gate_retry = 0, beam_sent = 0, imu_retry = 0;
+    bool input_gate_seen = false, input_gate_absent = false;
     double filter_attempt = 0, filter_retry = 0;
     void clear_filter_confirmation(double now);
     int gate_index = -1;
     bool confirm_input_gate(int index, double now);
-    void update_beam(double now);
+    bool update_beam(double now);
     void send_command(const char *op);
     bool check_resume(double time, const Vector3 &led, const Quaternion &orientation);
     void discard_resume();

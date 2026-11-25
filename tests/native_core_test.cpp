@@ -162,6 +162,11 @@ int main() {
         input.flags = flags;
         assert(!wire::app_input(input, 10.1, 0, 10));
     }
+    input.flags = 3u | wire::TouchpadCursor;
+    input.pose_time = input.time;
+    assert(!wire::app_input(input, 10.1, 0, 10));
+    input.buttons = 16u;
+    assert(wire::app_input(input, 10.1, 0, 10));
     for (int i = 0; i < 10000; ++i) {
         const double time = 10 + i * .01;
         position.sample(time, {}, 0);

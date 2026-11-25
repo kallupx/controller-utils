@@ -11,6 +11,8 @@ int main(int argc, char **argv) {
         return ct::camera_switch_worker();
     std::filesystem::path data;
     try {
+        if (argc == 2 && std::string(argv[1]) == "--guard-cursor-width")
+            return ct::guard_cursor_width();
         const bool registration = argc == 2 && (std::string(argv[1]) == "--register" ||
                                                 std::string(argv[1]) == "--unregister" ||
                                                 std::string(argv[1]) == "--prepare-registration");

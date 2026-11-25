@@ -154,18 +154,24 @@ def calibration(source, package=None):
 
 
 def start_service(unit):
-    result = systemctl("start", unit, check=False)
-    if result.returncode == 0:
-        return
+    result = systemctl("start", unit, check=False, capture=True)
     deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
+    while result.returncode and time.monotonic() < deadline:
         state = systemctl("show", unit, "-p", "ActiveState", "--value", capture=True).stdout.strip()
         if state == "active":
             return
-        if state != "activating":
+        if state == "activating":
+            time.sleep(0.2)
+            continue
+        # An irreversible stop on a dependency can still block this start (systemctl exit 4).
+        if result.returncode != 4 or state not in ("inactive", "deactivating"):
             break
         time.sleep(0.2)
-    result.check_returncode()
+        result = systemctl("start", unit, check=False, capture=True)
+    if result.returncode:
+        if result.stderr:
+            print(result.stderr.rstrip(), file=sys.stderr)
+        result.check_returncode()
 
 
 def start_services():
@@ -186,11 +192,10 @@ def stop_services(*, check=True):
     )
 
 
-def ready():
+def ready(required_gates):
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-    expected = {
-        f"@controller-utils.{name}.v1.{os.getuid()}" for name in ("optical", "input", "beam")
-    }
+    names = ("optical", *required_gates)
+    expected = {f"@controller-utils.{name}.v1.{os.getuid()}" for name in names}
     camera_runtime = runpy.run_path(str(BASE / "app/optical/frame_camera_runtime.py"))
     if warning := camera_runtime["camera_device_warning"]():
         # XRService can abort before creating its socket when the kernel has no camera devices.
@@ -246,7 +251,7 @@ def legacy_installation():
     return True
 
 
-def retire_legacy(sources, receipt, migrate=False, missing=()):
+def retire_legacy(sources, receipt, migrate, missing, required_gates):
     stop_services()
     try:
         if migrate:
@@ -266,7 +271,7 @@ def retire_legacy(sources, receipt, migrate=False, missing=()):
             atomic_text(receipt, json.dumps(sorted(owned | created)), 0o600)
     finally:
         start_services()
-    ready()
+    ready(required_gates)
 
 
 def validate_calibration(package, data, camera_config):
@@ -329,7 +334,9 @@ def setup_lock(data):
         yield
 
 
-def install(package, camera_config, unattended=False, migrate=False):
+def install(
+    package, camera_config, unattended=False, migrate=False, required_gates=("input", "beam")
+):
     data, app = BASE / "app-data", BASE / "app"
     data.mkdir(parents=True, exist_ok=True, mode=0o700)
     with setup_lock(data):
@@ -406,7 +413,7 @@ def install(package, camera_config, unattended=False, migrate=False):
             command(app / "controller-utils", "--prepare-registration")
             systemctl("daemon-reload")
             start_services()
-            ready()
+            ready(required_gates)
             for path in () if migrate else missing:
                 command("sudo", "install", "-m", "0644", sources[path], path)
                 created_policies.append(path)
@@ -443,7 +450,7 @@ def install(package, camera_config, unattended=False, migrate=False):
                 start_services()
             raise
         if legacy:
-            retire_legacy(sources, receipt, migrate, missing)
+            retire_legacy(sources, receipt, migrate, missing, required_gates)
         old_unit = UNITS / LEGACY_UNIT
         if (
             not old_unit.is_symlink()
@@ -565,7 +572,15 @@ def main():
     camera_config = calibration(args.calibration, package)
     if DEBUG:
         DEBUG["record"]("Setup loaded camera calibration")
-    command(package / "frame-compatibility")
+    compatibility = command(package / "frame-compatibility", check=False)
+    gates = {0: ("input", "beam"), 3: ("beam",), 4: ("input",), 5: ()}.get(compatibility.returncode)
+    if gates is None:
+        compatibility.check_returncode()
+    if DEBUG:
+        if "input" not in gates:
+            DEBUG["record"]("Steam menu input will use the controller's Bluetooth stream")
+        if "beam" not in gates:
+            DEBUG["record"]("Setup using the SteamVR cursor for the right touchpad")
     subprocess.run(
         [package / "app/optical/frame_palm_inference", PALM],
         stdin=subprocess.DEVNULL,
@@ -573,11 +588,17 @@ def main():
         timeout=30,
     )
     if DEBUG:
-        DEBUG["record"]("Setup compatibility check and CPU palm model passed")
+        DEBUG["record"]("Setup loaded CPU palm model")
     if args.check:
         print(f"Frame {channel} package preflight passed")
     else:
-        install(package, camera_config, args.unattended, args.legacy_migration)
+        install(
+            package,
+            camera_config,
+            args.unattended,
+            args.legacy_migration,
+            gates,
+        )
     if DEBUG:
         DEBUG["record"]("Setup finished")
 

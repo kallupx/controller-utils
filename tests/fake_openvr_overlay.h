@@ -10,7 +10,7 @@ inline std::atomic<unsigned> next_overlay{0}, overlays_created{0}, overlays_dest
     textures_submitted{0}, overlays_shown{0};
 inline std::array<float, 512> overlay_widths{};
 inline std::atomic<unsigned> keyboard_shown{0}, keyboard_positioned{0};
-struct Overlay final : IVROverlay {
+struct Overlay : IVROverlay {
     EVROverlayError FindOverlay(const char *pchOverlayKey,
                                 VROverlayHandle_t *pOverlayHandle) override {
         const auto target = std::getenv("CT_TEST_OPENVR_KEYBOARD_TARGET");

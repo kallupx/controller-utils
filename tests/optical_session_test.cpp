@@ -6,6 +6,7 @@
 namespace {
 int64_t micros = 100000000;
 int pair_fd[2]{}, gate_fd[2]{}, beam_fd[2]{};
+int input_connect_error = 0;
 class Camera final : public ct::ChildChannel {
   public:
     std::vector<ct::json::Value> events;
@@ -64,6 +65,10 @@ extern "C" int __wrap_connect(int fd, const sockaddr *addr, socklen_t) {
         return 0;
     }
     const bool gate = std::strstr(socket.sun_path + 1, ".input.");
+    if (gate && input_connect_error) {
+        errno = input_connect_error;
+        return -1;
+    }
     return dup3(gate ? gate_fd[0] : pair_fd[0], fd, O_CLOEXEC) < 0 ? -1 : 0;
 }
 int main() {
@@ -148,6 +153,52 @@ int main() {
         assert(step());
     assert((packet.input.flags & 2) && !(packet.input.flags & 1));
     ui = true;
+    input_connect_error = EACCES;
+    for (int i = 0; i < 8; ++i)
+        assert(step());
+    assert(!(packet.input.flags & 1));
+    input_connect_error = ECONNREFUSED;
+    filter->confirm = false;
+    for (int i = 0; i < 160; ++i)
+        assert(step());
+    assert(!(packet.input.flags & 1));
+    filter->confirm = true;
+    for (int i = 0; i < 40; ++i)
+        assert(step());
+    assert(!(packet.input.flags & 1));
+    hid->bluetooth_menu_available = true;
+    report.report.triggers[1] = .8;
+    for (int i = 0; i < 100; ++i)
+        assert(step());
+    assert(!hid->bluetooth_menu_active && !(packet.input.flags & 1));
+    report.report.triggers[1] = 0;
+    for (int i = 0; i < 130; ++i)
+        assert(step());
+    assert(hid->bluetooth_menu_active && (packet.input.flags & 7) == 7);
+    report.report.triggers[1] = .8;
+    assert(step() && step() && packet.input.trigger > .5);
+    report.report.triggers[1] = 0;
+    assert(step() && step() && packet.input.trigger == 0);
+    report.report.buttons = 0x10;
+    assert(step() && step() && !hid->bluetooth_menu_active && !(packet.input.flags & 1));
+    report.report.buttons = 0;
+    for (int i = 0; i < 120; ++i)
+        assert(step());
+    assert(hid->bluetooth_menu_active);
+    filter->confirm = false;
+    for (int i = 0; i < 160; ++i)
+        assert(step());
+    assert(!hid->bluetooth_menu_active && !(packet.input.flags & 1));
+    filter->confirm = true;
+    ui = false;
+    assert(step() && step() && !(packet.input.flags & 1));
+    input_connect_error = 0;
+    for (int i = 0; i < 160; ++i)
+        assert(step());
+    camera->emit("led", ct::raw_time() - .075);
+    pose = step();
+    assert(pose);
+    ui = true;
     for (int i = 0; i < 4; ++i)
         assert(step());
     assert((packet.input.flags & 2) && !(packet.input.flags & 1));
@@ -175,6 +226,17 @@ int main() {
     assert(step());
     assert(recv(beam_fd[1], &target, sizeof(target), 0) == 0);
     assert((packet.input.flags & 3) == 3);
+    runtime.cursor_available = true;
+    report.report.buttons = 0x00200000;
+    for (int i = 0; i < 3; ++i)
+        assert(step());
+    assert(runtime.cursor_active && (packet.input.flags & ct::wire::TouchpadCursor));
+    runtime.dashboard_pointer.reset();
+    for (int i = 0; i < 3; ++i)
+        assert(step());
+    assert(!runtime.cursor_active && !(packet.input.flags & ct::wire::TouchpadCursor));
+    runtime.dashboard_pointer = 3;
+    report.report.buttons = 0;
     assert(camera->guided);
     const auto before_bearing = step();
     assert(before_bearing);

@@ -54,6 +54,7 @@ class Runtime final : public ct::RuntimeView {
     bool awake = true;
     ct::RigidPose head{1, 0, 0, 0, 0, 1, 0, 1.6, 0, 0, 1, 0};
     std::optional<unsigned> dashboard_pointer;
+    bool cursor_available = false, cursor_active = false;
     std::string serial(uint32_t index) override {
         return index == 0 ? "HEADSET" : "controllerutils-sc26-input-TEST1234";
     }
@@ -62,6 +63,10 @@ class Runtime final : public ct::RuntimeView {
     }
     std::optional<unsigned> primary_dashboard_device() override {
         return dashboard_pointer;
+    }
+    bool set_menu_cursor(ct::MenuCursor mode) override {
+        cursor_active = mode == ct::MenuCursor::Touchpad && cursor_available;
+        return cursor_active;
     }
 };
 inline ct::ControllerInput input(json_object *value) {

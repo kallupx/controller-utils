@@ -10,7 +10,7 @@ SANITIZE_OBJECTS := $(patsubst %.cpp,build/sanitize/%.o,$(SOURCES))
 LIBS := $(shell pkg-config --libs json-c libcrypto libcurl libsystemd) -ldl -pthread
 UI_LIBS := $(shell pkg-config --libs egl gl cairo fontconfig)
 SANITIZE_FLAGS := -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer
-UNIT_TESTS := calibration_test native_core_test controller_device_test controller_reader_test platform_runtime_test native_shortcuts_test child_process_test optical_session_test application_test application_instance_test registration_test native_host_test ui_presentation_test steam_ui_test resilience_gates_test
+UNIT_TESTS := calibration_test native_core_test controller_device_test controller_reader_test platform_runtime_test native_shortcuts_test child_process_test optical_session_test application_test application_instance_test registration_test native_host_test ui_presentation_test steam_ui_test resilience_gates_test touchpad_cursor_test
 OTHER_TESTS := pose_math_test pointer_math_test body_pose_test mesh_test tracked_input_test gaze_test button_glyphs_test dashboard_test ui_renderer_test touchpad_glow_test
 
 .PHONY: all check check-sanitize driver native-driver format check-format frame-optical
@@ -57,7 +57,7 @@ build/native/src/steamvr/steam_ui_transport.o build/sanitize/src/steamvr/steam_u
 
 -include $(OBJECTS:.o=.d) $(SANITIZE_OBJECTS:.o=.d) build/native/src/ui/renderer.d build/sanitize/src/ui/renderer.d
 
-build/fake_openvr.so: tests/fake_openvr_library.cpp tests/fake_openvr_interfaces.h tests/fake_openvr_overlay.h third_party/openvr/openvr.h
+build/fake_openvr.so: tests/fake_openvr_library.cpp tests/fake_openvr_interfaces.h tests/fake_openvr_overlay.h third_party/openvr/openvr.h third_party/openvr/ivrmailbox_001.h
 	mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -Wno-unused-parameter -fPIC -shared $< -o $@
 
@@ -67,6 +67,9 @@ build/native_host_test build/sanitize/native_host_test build/controller_device_t
 build/native_replay build/sanitize/native_replay build/application_test build/sanitize/application_test: tests/app_replay.h
 build/native_replay build/sanitize/native_replay build/application_test build/sanitize/application_test build/optical_session_test build/sanitize/optical_session_test: tests/session_replay.h tests/filter_fixture.h tests/fake_controller.h
 build/registration_test build/sanitize/registration_test: tests/fake_openvr_interfaces.h
+
+build/touchpad_cursor_test build/sanitize/touchpad_cursor_test: tests/fake_openvr_overlay.h
+build/touchpad_cursor_test build/sanitize/touchpad_cursor_test: private CXXFLAGS += -Wno-unused-parameter
 
 $(addprefix build/,$(UNIT_TESTS) native_replay): build/%: tests/%.cpp $(OBJECTS)
 	$(CXX) $(CXXFLAGS) $(shell pkg-config --cflags json-c) $(filter %.cpp %.o,$^) -o $@ $(LIBS) $(WRAP)

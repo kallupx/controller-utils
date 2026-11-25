@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
-#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -42,6 +41,33 @@ constexpr double Tolerance = .001;
 constexpr double TimerHz = 19200000.;
 constexpr size_t FrontViews = 2;
 constexpr size_t ViewCount = 4;
+constexpr unsigned FrontMask = (1U << FrontViews) - 1;
+constexpr unsigned AllMask = (1U << ViewCount) - 1;
+
+// The front pair defines an exposure. An upper view must fit the same 1 ms window.
+constexpr unsigned synchronized_views(std::array<double, ViewCount> sof, unsigned required) {
+    double first = std::min(sof[0], sof[1]), last = std::max(sof[0], sof[1]);
+    if (!first || last - first > Tolerance)
+        return 0;
+    unsigned mask = FrontMask;
+    for (size_t i = FrontViews; i < ViewCount; ++i) {
+        const double low = std::min(first, sof[i]), high = std::max(last, sof[i]);
+        if (sof[i] && high - low <= Tolerance) {
+            mask |= 1U << i;
+            first = low;
+            last = high;
+        }
+    }
+    return (mask & required) == required ? mask : 0;
+}
+static_assert(synchronized_views({1, 1, 1, 1}, AllMask) == AllMask);
+static_assert(!synchronized_views({1, 1, 0, 1}, AllMask));
+static_assert(synchronized_views({1, 1, 0, 1}, 1U << 3) == 0b1011);
+static_assert(!synchronized_views({1, 1, 0, 1}, 1U << 2));
+static_assert(synchronized_views({1, 1, 1.004, .996}, FrontMask) == FrontMask);
+static_assert(!synchronized_views({1, 1, .9992, 1.0008}, AllMask));
+static_assert(!synchronized_views({1, 1.004, 1, 1}, FrontMask));
+static_assert(!synchronized_views({0, 1, 1, 1}, FrontMask));
 
 // In 50/60 Hz lighting modes the scene follows IR by 21.62/24.95 ms respectively.
 constexpr bool scene_gap(double seconds) {
@@ -73,22 +99,30 @@ static_assert(CamssPlaneLayout{{0, 1179648}, {1152, 1152}, {1179648, 589824}}.li
 static_assert(!LumaPlane{1152, 1056 * 1024}.fits(1056, 1024, 1769472));
 
 struct CameraRoute {
-    std::string_view grey, isp;
+    std::string_view grey, alternate;
+    uint32_t alternate_format;
 
     constexpr uint32_t format(std::string_view node) const {
         if (node == grey)
             return V4L2_PIX_FMT_GREY;
-        // When the ISP is available, the front cameras put grayscale in the NV12 luma plane.
-        return !isp.empty() && node == isp ? V4L2_PIX_FMT_NV12 : 0;
+        return node == alternate ? alternate_format : 0;
     }
 };
-constexpr CameraRoute SlamRight{"msm_vfe3_video0", "msm_vfe0_video0"};
-constexpr CameraRoute SlamLeft{"msm_vfe4_video0", "msm_vfe1_video0"};
+constexpr CameraRoute SlamRight{"msm_vfe3_video0", "msm_vfe0_video0", V4L2_PIX_FMT_NV12};
+constexpr CameraRoute SlamLeft{"msm_vfe4_video0", "msm_vfe1_video0", V4L2_PIX_FMT_NV12};
+// Without FPGA interleaving, the 640x480 upper cameras can use the fronts' grayscale nodes.
+constexpr CameraRoute UpperLeft{"msm_vfe2_video0", SlamLeft.grey, V4L2_PIX_FMT_GREY};
+constexpr CameraRoute UpperRight{"msm_vfe2_video1", SlamRight.grey, V4L2_PIX_FMT_GREY};
 static_assert(SlamRight.format("msm_vfe0_video0") == V4L2_PIX_FMT_NV12 &&
               SlamLeft.format("msm_vfe1_video0") == V4L2_PIX_FMT_NV12 &&
               SlamRight.format("msm_vfe3_video0") == V4L2_PIX_FMT_GREY &&
               SlamLeft.format("msm_vfe4_video0") == V4L2_PIX_FMT_GREY &&
               !SlamLeft.format("msm_vfe0_video0"));
+static_assert(UpperLeft.format("msm_vfe2_video0") == V4L2_PIX_FMT_GREY &&
+              UpperRight.format("msm_vfe2_video1") == V4L2_PIX_FMT_GREY &&
+              UpperLeft.format("msm_vfe4_video0") == V4L2_PIX_FMT_GREY &&
+              UpperRight.format("msm_vfe3_video0") == V4L2_PIX_FMT_GREY &&
+              !UpperLeft.format("msm_vfe3_video0") && !UpperRight.format("msm_vfe4_video0"));
 
 struct Camera {
     const char *name;
@@ -113,7 +147,7 @@ struct View {
     ino_t inode = 0;
     uint64_t offset = 0;
     uint32_t stride = 0;
-    double time = 0;
+    double sof = 0, time = 0;
     int device = -1;
     v4l2_buffer queue{};
     std::array<v4l2_plane, 2> planes{};
@@ -170,7 +204,6 @@ double capture_time(const v4l2_buffer &buffer, double sof) {
 
 struct Group {
     std::array<View, ViewCount> views;
-    double sof = 0;
     uint64_t seq = 0;
 };
 
@@ -180,8 +213,8 @@ class CameraHook {
     std::array<Camera, ViewCount> cameras{{
         {"slam_right", SlamRight, 1056, 1024, 1769472, {}},
         {"slam_left", SlamLeft, 1056, 1024, 1769472, {}},
-        {"upper_left", {"msm_vfe2_video0", {}}, 640, 480, 462848, {}},
-        {"upper_right", {"msm_vfe2_video1", {}}, 640, 480, 462848, {}},
+        {"upper_left", UpperLeft, 640, 480, 462848, {}},
+        {"upper_right", UpperRight, 640, 480, 462848, {}},
     }};
     std::unordered_map<int, Backing> backing;
     FileDescriptor lock, listener, reader, pidfd;
@@ -191,18 +224,21 @@ class CameraHook {
     uint64_t sequence = 0;
     std::array<double, 2> last_published{};
 
-    void clear(Group &group) {
-        for (auto &view : group.views) {
-            if (view.dma)
-                sync_read(view.dma.get(), DMA_BUF_SYNC_END);
-            if (view.queue.length) {
-                view.queue.m.planes = view.planes.data();
-                if (ioctl_next()(view.device, VIDIOC_QBUF, &view.queue) < 0)
-                    dprintf(2, "Controller Utils camera: delayed QBUF failed: %s\n",
-                            strerror(errno));
-            }
+    void clear(View &view) {
+        if (view.dma)
+            sync_read(view.dma.get(), DMA_BUF_SYNC_END);
+        if (view.queue.length) {
+            view.queue.m.planes = view.planes.data();
+            if (ioctl_next()(view.device, VIDIOC_QBUF, &view.queue) < 0)
+                dprintf(2, "Controller Utils camera: delayed QBUF failed: %s\n", strerror(errno));
         }
-        group = {};
+        view = {};
+    }
+
+    void clear(Group &group) {
+        for (auto &view : group.views)
+            clear(view);
+        group.seq = 0;
     }
 
     void service_reader() {
@@ -254,23 +290,30 @@ class CameraHook {
         }
     }
 
-    void publish(bool ir) {
+    void publish(bool ir, unsigned required) {
         if (leased.seq)
             return;
         auto &group = pending[ir];
+        std::array<double, ViewCount> sof{};
+        for (size_t i = 0; i < ViewCount; ++i)
+            sof[i] = group.views[i].sof;
+        const auto selected = synchronized_views(sof, required);
+        if (!selected)
+            return;
         std::array<int, ViewCount> descriptors{};
-        const size_t count = ir ? ViewCount : FrontViews;
+        size_t count = 0;
         double time = 0;
         std::string views;
-        for (size_t i = 0; i < count; ++i) {
+        for (size_t i = 0; i < ViewCount; ++i) {
+            if (!(selected & (1U << i)))
+                continue;
             const auto &view = group.views[i];
-            if (!view.file)
-                return;
             if (i < FrontViews)
                 time += view.time / FrontViews;
-            descriptors[i] = view.file.get();
-            views += (i ? ",[\"" : "[\"") + cameras[i].serial + "\"," +
+            descriptors[count] = view.file.get();
+            views += (count ? ",[\"" : "[\"") + cameras[i].serial + "\"," +
                      std::to_string(view.stride) + "," + std::to_string(view.offset) + "]";
+            ++count;
         }
         const uint64_t seq = sequence + 1;
         std::string header = "{\"seq\":" + std::to_string(seq) +
@@ -290,10 +333,11 @@ class CameraHook {
         rights->cmsg_len = CMSG_LEN(count * sizeof(int));
         memcpy(CMSG_DATA(rights), descriptors.data(), count * sizeof(int));
         if (sendmsg(reader.get(), &packet, MSG_NOSIGNAL) == static_cast<ssize_t>(header.size())) {
-            sequence = group.seq = seq;
-            last_published[ir] = group.sof;
-            leased = std::move(group);
-            group = {};
+            sequence = leased.seq = seq;
+            last_published[ir] = std::max(sof[0], sof[1]);
+            for (size_t i = 0; i < ViewCount; ++i)
+                if (selected & (1U << i))
+                    leased.views[i] = std::exchange(group.views[i], View{});
         } else {
             clear(group);
         }
@@ -318,13 +362,8 @@ class CameraHook {
             return;
         if (sof <= last_published[ir] + Tolerance)
             return;
-        auto &group = pending[ir];
-        if (group.sof && std::abs(sof - group.sof) > Tolerance) {
-            if (sof < group.sof)
-                return;
-            clear(group);
-        }
-        if (group.views[index].file)
+        auto &view = pending[ir].views[index];
+        if (sof <= view.sof + Tolerance)
             return;
         const double time = capture_time(buffer, sof);
         if (!time)
@@ -340,8 +379,13 @@ class CameraHook {
         FileDescriptor lease(fcntl(pixels.m.fd, F_DUPFD_CLOEXEC, 3));
         if (!shared || !lease || !sync_read(lease.get(), DMA_BUF_SYNC_START))
             return;
-        group.sof = sof;
-        auto &view = group.views[index];
+        if (view.file) {
+            // Share a synchronized IR group before any of its views is replaced.
+            if (ir)
+                publish(true, 1U << index);
+            clear(view);
+        }
+        view.sof = sof;
         view.file = std::move(shared);
         view.dma = std::move(lease);
         view.inode = dma.st_ino;
@@ -349,7 +393,7 @@ class CameraHook {
         view.stride = camera.stride;
         view.time = time - (ir ? 0 : .00836);
         view.device = camera.device;
-        publish(ir);
+        publish(ir, ir ? AllMask : FrontMask);
     }
 
   public:

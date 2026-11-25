@@ -97,7 +97,23 @@ uint64_t Runtime::path_handle(const char *name) {
         throw std::runtime_error("SteamVR path is unavailable");
     return handle;
 }
+bool Runtime::set_menu_cursor(MenuCursor mode) {
+    if (!overlay)
+        return false;
+    if (mode == MenuCursor::Laser) {
+        cursor_.lift(*overlay, monotonic_time());
+        return false;
+    }
+    if (mode == MenuCursor::Touchpad) {
+        const auto head = head_pose(vr::TrackingUniverseStanding);
+        if (head && cursor_.update(*overlay, *head))
+            return true;
+    }
+    cursor_.release(*overlay);
+    return false;
+}
 void Runtime::close() {
+    set_menu_cursor(MenuCursor::Inactive);
     if (initialized_) {
         initialized_ = false;
         shutdown_();

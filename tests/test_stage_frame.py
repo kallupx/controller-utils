@@ -4,12 +4,13 @@ import io
 import json
 import os
 import runpy
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -23,20 +24,51 @@ def arm64_file(path):
 
 
 class FramePackageTest(unittest.TestCase):
+    def test_service_start_retries_a_pending_stop_and_reports_a_failed_unit(self):
+        start = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["start_service"]
+        refused = subprocess.CompletedProcess(["systemctl"], 4, "", "Start refused")
+        inactive = subprocess.CompletedProcess(["systemctl"], 0, "inactive", "")
+        success = subprocess.CompletedProcess(["systemctl"], 0, "", "")
+        with (
+            patch.dict(start.__globals__, systemctl=Mock(side_effect=[refused, inactive, success])),
+            patch("time.sleep"),
+        ):
+            start("steamvr.service")
+        failed = subprocess.CompletedProcess(["systemctl"], 0, "failed", "")
+        with (
+            patch.dict(start.__globals__, systemctl=Mock(side_effect=[refused, failed])),
+            contextlib.redirect_stderr(io.StringIO()) as notice,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            start("steamvr.service")
+        self.assertIn("Start refused", notice.getvalue())
+
     def test_setup_requires_camera_socket_unless_kernel_devices_are_missing(self):
         ready = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["ready"]
         drivers = [
             f"@controller-utils.{name}.v1.{os.getuid()}" for name in ("optical", "input", "beam")
         ]
-        for warning, sockets, succeeds in [
-            (None, drivers, False),
-            (None, [*drivers, "/test/controller-utils-camera.sock"], True),
-            ("Restart Frame", drivers, True),
-            ("Restart Frame", drivers[:-1], False),
+        camera = "/test/controller-utils-camera.sock"
+        optical, input_gate, beam = drivers
+        both = ("input", "beam")
+        for warning, sockets, gates, succeeds in [
+            (None, drivers, both, False),
+            (None, [*drivers, camera], both, True),
+            ("Restart Frame", drivers, both, True),
+            ("Restart Frame", drivers[:-1], both, False),
+            (None, [optical, beam, camera], ("beam",), True),
+            (None, [optical, beam, camera], both, False),
+            (None, [optical, beam], ("beam",), False),
+            (None, [optical, input_gate, camera], ("beam",), False),
+            (None, [optical, input_gate, camera], ("input",), True),
+            (None, [optical, camera], ("input",), False),
+            (None, [optical, camera], (), True),
+            (None, [optical], (), False),
+            (None, [input_gate, beam, camera], (), False),
         ]:
             entries = "\n".join(f"0: 0 0 00010000 0 0 0 {name}" for name in sockets)
             with (
-                self.subTest(warning=warning, sockets=sockets),
+                self.subTest(warning=warning, sockets=sockets, gates=gates),
                 patch.dict(os.environ, XDG_RUNTIME_DIR="/test"),
                 patch("runpy.run_path", return_value={"camera_device_warning": lambda: warning}),
                 patch.object(Path, "read_text", return_value=entries),
@@ -45,10 +77,10 @@ class FramePackageTest(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()) as notice,
             ):
                 if succeeds:
-                    ready()
+                    ready(gates)
                 else:
                     with self.assertRaisesRegex(RuntimeError, "connections"):
-                        ready()
+                        ready(gates)
                 self.assertEqual(notice.getvalue().strip(), warning or "")
 
     def test_concurrent_setup_explains_lock_and_allows_retry_after_release(self):
@@ -67,8 +99,10 @@ class FramePackageTest(unittest.TestCase):
         output = io.StringIO()
 
         def command(*args, **kwargs):
-            return SimpleNamespace(
-                stdout={"tracked-branch": "stable", "tracked-variant": "vr"}.get(args[-1], "")
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout={"tracked-branch": "stable", "tracked-variant": "vr"}.get(args[-1], ""),
             )
 
         with (
@@ -92,6 +126,51 @@ class FramePackageTest(unittest.TestCase):
         palm.assert_called_once()
         self.assertIn("Running 20261029.6150930", output.getvalue())
         self.assertIn("Frame stable package preflight passed", output.getvalue())
+
+    def test_setup_only_requires_the_supported_native_sockets(self):
+        main = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["main"]
+        for code, gates in [
+            (0, ("input", "beam")),
+            (3, ("beam",)),
+            (4, ("input",)),
+            (5, ()),
+            (1, None),
+            (2, None),
+            (6, None),
+            (-9, None),
+        ]:
+            install = Mock()
+
+            def command(*args, **kwargs):
+                value = {"tracked-branch": "beta", "tracked-variant": "vr"}.get(args[-1])
+                return subprocess.CompletedProcess(args, code if value is None else 0, stdout=value)
+
+            with (
+                self.subTest(code=code),
+                patch.dict(
+                    main.__globals__,
+                    verify_package=lambda _: ("beta", "test"),
+                    calibration=lambda *args: "calibration",
+                    command=command,
+                    install=install,
+                ),
+                patch.object(sys, "argv", ["install.py", "--unattended"]),
+                patch("os.geteuid", return_value=1000),
+                patch("platform.machine", return_value="aarch64"),
+                patch.object(Path, "read_text", return_value="BUILD_ID=test\n"),
+                patch("subprocess.run") as palm,
+            ):
+                if gates is not None:
+                    main()
+                    self.assertEqual(
+                        install.call_args.args[1:], ("calibration", True, False, gates)
+                    )
+                    palm.assert_called_once()
+                else:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        main()
+                    install.assert_not_called()
+                    palm.assert_not_called()
 
     def test_installer_and_worker_support_stable_python(self):
         scripts = [
@@ -191,7 +270,7 @@ class FramePackageTest(unittest.TestCase):
             config.parent.mkdir()
             config.write_text("previous calibration")
 
-            def fail():
+            def fail(required_gates):
                 raise RuntimeError("beam hook failed")
 
             with patch.dict(
@@ -269,7 +348,7 @@ class FramePackageTest(unittest.TestCase):
                 RULE=rule,
                 KEEP=keep,
                 validate_calibration=lambda *args: None,
-                ready=lambda: None,
+                ready=lambda required_gates: None,
                 command=command,
                 systemctl=command,
             ):
@@ -366,14 +445,14 @@ class FramePackageTest(unittest.TestCase):
                 KEEP=keep,
                 legacy_installation=lambda: True,
                 validate_calibration=lambda *args: None,
-                ready=lambda: calls.append(("ready",)),
+                ready=lambda required_gates: calls.append(("ready", required_gates)),
                 command=command,
                 systemctl=command,
             ):
                 with self.assertRaisesRegex(ValueError, "administrator authorization"):
                     install(package, "calibration", unattended=True)
                 self.assertFalse(calls)
-                install(package, "calibration", migrate=migrate)
+                install(package, "calibration", migrate=migrate, required_gates=("input",))
             updater = str(code["LEGACY_UPDATER"])
             retire = (
                 ("sudo", "-n", updater, "--confirm")
@@ -381,7 +460,8 @@ class FramePackageTest(unittest.TestCase):
                 else ("sudo", updater, "--uninstall")
             )
             self.assertEqual(("sudo", "-v") in calls, not migrate)
-            self.assertLess(calls.index(("ready",)), calls.index(retire))
+            self.assertLess(calls.index(("ready", ("input",))), calls.index(retire))
+            self.assertEqual(calls.count(("ready", ("input",))), 2)
             self.assertTrue(rule.is_file() and keep.is_file())
             self.assertFalse(unit.exists())
             self.assertEqual((base / "app/controller-utils").read_text(), "new app")

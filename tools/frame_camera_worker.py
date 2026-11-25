@@ -269,28 +269,50 @@ def camera_feed(headset, parent):
                 raise ValueError("Camera provider belongs to a different user")
             calibration = None
             seq = -1
+            stats_since = None
+            scene = rejected_ir = 0
+            last_ir_age = None
+
+            def first_ir(kind, t, images):
+                nonlocal scene, rejected_ir, last_ir_age
+                if kind != 38:
+                    scene += 1
+                    return 0
+                last_ir_age = raw_time() - t
+                if -0.02 <= last_ir_age <= 0.14:
+                    return len(images)
+                rejected_ir += 1
+                return 0
+
             while waiting(
-                "Waiting for tracking-camera images. Put Frame on and check its own passthrough."
+                "Waiting for infrared images from Frame's tracking cameras."
+                if calibration is not None
+                else "Waiting for SteamVR camera calibration. Put Frame on to wake it."
             ):
+                if stats_since is not None and time.monotonic() - stats_since >= 5:
+                    age = "none" if last_ir_age is None else str(round(last_ir_age * 1000))
+                    frame_debug.record(
+                        f"Camera startup scene={scene} rejected_ir={rejected_ir} last_ir_age_ms={age}"
+                    )
+                    stats_since = time.monotonic()
+                    scene = rejected_ir = 0
+                    last_ir_age = None
                 if not select.select([sock], [], [], 0.1)[0]:
                     continue
                 try:
                     if calibration is None:
                         calibration = raw.calibration(sock, headset)
+                        stats_since = time.monotonic()
                         frame_debug.record(
                             f"Camera calibration accepted views={len(calibration[0])}"
                         )
                         continue
-                    seq, live = raw.frame(
-                        sock,
-                        calibration[0],
-                        seq,
-                        lambda kind, t, images: kind == 38 and -0.02 <= raw_time() - t <= 0.14,
-                    )
+                    seq, live = raw.frame(sock, calibration[0], seq, first_ir)
                 except EOFError:
                     frame_debug.record("Camera provider closed during startup")
                     break  # A provider can exit after calibration but before the first IR image.
                 if live:
+                    frame_debug.record(f"First fresh camera IR views={live}")
                     yield sock, *calibration, seq
                     return
     yield None

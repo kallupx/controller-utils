@@ -114,6 +114,12 @@ class RawCameraTest(unittest.TestCase):
                 patch.object(self.raw, "address", return_value=path),
                 patch.object(self.worker, "raw_time", return_value=1),
                 patch.object(
+                    self.worker.time, "monotonic", side_effect=lambda: 6 if polls >= 12 else 0
+                ),
+                patch.object(self.worker.frame_debug, "record") as record,
+                patch.object(self.worker, "emit"),
+                patch.object(self.worker, "camera_device_warning", return_value=None),
+                patch.object(
                     self.raw, "parse_calibration", return_value=(self.cameras, "config")
                 ) as parse,
                 self.worker.camera_feed("HEADSET", SimpleNamespace(poll=poll)) as feed,
@@ -124,6 +130,8 @@ class RawCameraTest(unittest.TestCase):
                 )
             self.assertEqual(parse.call_count, 2)
             parse.assert_called_with({"version": 1}, "HEADSET")
+            record.assert_any_call("Camera startup scene=1 rejected_ir=1 last_ir_age_ms=500")
+            record.assert_any_call("First fresh camera IR views=1")
 
     def test_camera_wait_honors_stop_and_reports_a_persistently_missing_provider(self):
         worker = self.worker
