@@ -141,6 +141,17 @@ int main() {
     assert(selection.input.values.at("/input/activate/click") == 1);
 
     Fixture cursor;
+    Fixture fallback;
+    fallback.state.cursor_only = fallback.state.pad_touch = true;
+    fallback.tick(26);
+    assert(std::abs(fallback.input.tip.m[2][3] - 3.994f) < 1e-5f);
+    assert(fallback.host.published.vecPosition[2] == 0);
+    fallback.state.pad_click = true;
+    fallback.tick(26.01);
+    assert(fallback.input.values.at("/input/cursorpad/click") == 1);
+    fallback.state.pad_touch = fallback.state.pad_click = false;
+    fallback.tick(26.02);
+    assert(std::abs(fallback.input.tip.m[2][3] + .006f) < 1e-6f);
     cursor.state.pad_touch = cursor.state.scroll_touch = true;
     cursor.tick(30);
     assert(cursor.input.values.at("/input/activate/click") == 1);

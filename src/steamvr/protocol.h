@@ -5,6 +5,7 @@
 
 namespace ct::wire {
 constexpr uint32_t ControllerId = 16;
+constexpr uint32_t TouchpadCursor = 8;
 struct AppInput {
     uint32_t id, flags;
     double session_start, time, pose_time, orientation[4], position[3];
@@ -19,7 +20,8 @@ inline bool fresh_input_time(double time, double now) {
 }
 
 inline bool app_input(const AppInput &value, double now, double previous, double session_start) {
-    if (value.id != ControllerId || value.flags & ~7u ||
+    if (value.id != ControllerId || value.flags & ~(7u | TouchpadCursor) ||
+        ((value.flags & TouchpadCursor) && ((value.flags & 3u) != 3 || !(value.buttons & 16u))) ||
         ((value.flags & 4u) && !(value.flags & 1u)) || value.buttons & ~255u || value.reserved ||
         value.session_start != session_start || value.time < session_start ||
         value.time <= previous || !fresh_input_time(value.time, now))

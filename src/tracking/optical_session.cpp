@@ -163,28 +163,35 @@ void OpticalSession::clear_filter_confirmation(double now) {
     input.filter_confirmed.reset();
     filter_epoch = now;
 }
-void OpticalSession::update_beam(double now) {
+bool OpticalSession::update_beam(double now) {
     if (!input.native_active || !input.activation_confirmed || !input.input ||
         !input.input->pad_touch) {
         beam_gate.reset();
         beam_sent = 0;
-        return;
+        return runtime.set_menu_cursor(input.native_active && input.activation_confirmed &&
+                                               input.input
+                                           ? MenuCursor::Laser
+                                           : MenuCursor::Inactive);
     }
-    if (now - beam_sent < .15)
-        return;
-    beam_sent = now;
+    if (beam_gate && now - beam_sent < .15)
+        return false;
     const auto index = runtime.primary_dashboard_device();
     if (!index || *index >= vr::k_unMaxTrackedDeviceCount ||
         runtime.serial(*index) != "controllerutils-sc26-input-" + serial) {
         beam_gate.reset();
-        return;
+        beam_sent = 0;
+        return runtime.set_menu_cursor(MenuCursor::Inactive);
     }
-    if (!beam_gate)
-        beam_gate = connect_gate("beam");
-    const int32_t device_index = *index;
-    if (beam_gate && send(beam_gate.get(), &device_index, sizeof(device_index), MSG_NOSIGNAL) !=
-                         sizeof(device_index))
-        beam_gate.reset();
+    if (!beam_sent || now - beam_sent >= .15) {
+        beam_sent = now;
+        if (!beam_gate)
+            beam_gate = connect_gate("beam");
+        const int32_t device_index = *index;
+        if (beam_gate && send(beam_gate.get(), &device_index, sizeof(device_index), MSG_NOSIGNAL) !=
+                             sizeof(device_index))
+            beam_gate.reset();
+    }
+    return runtime.set_menu_cursor(beam_gate ? MenuCursor::Inactive : MenuCursor::Touchpad);
 }
 void OpticalSession::observation(json_object *event, double now) {
     auto op = json::string(json::field(event, "op"));
@@ -571,13 +578,14 @@ std::optional<BodyPoseMessage> OpticalSession::step(const std::vector<Controller
     }
     if (!input.native_active)
         input.activation_confirmed = false;
+    if (now - sent >= .009 && input.native_active && !input.activation_confirmed) {
+        const auto index = runtime.primary_dashboard_device();
+        input.activation_confirmed =
+            index && runtime.serial(*index) == "controllerutils-sc26-input-" + serial;
+    }
+    const bool cursor_only = update_beam(mono);
     if (now - sent >= .009) {
         auto controls = input.input.value_or(InputControls{});
-        if (input.native_active && !input.activation_confirmed) {
-            const auto index = runtime.primary_dashboard_device();
-            input.activation_confirmed =
-                index && runtime.serial(*index) == "controllerutils-sc26-input-" + serial;
-        }
         controls.activate = !input.activation_confirmed;
         auto driver_pose = result;
         if (driver_pose)
@@ -587,12 +595,13 @@ std::optional<BodyPoseMessage> OpticalSession::step(const std::vector<Controller
             throw std::runtime_error("Invalid controller serial");
         serial.copy(packet.serial, serial.size());
         packet.input = bridge_input(started, now, driver_pose, controls, input.native_active);
+        if (cursor_only)
+            packet.input.flags |= wire::TouchpadCursor;
         const ssize_t n = send(driver.get(), &packet, sizeof(packet), MSG_NOSIGNAL);
         if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
             throw std::runtime_error("Optical driver disconnected.");
         sent = now;
     }
-    update_beam(mono);
     if (!result && showing_resume(now)) {
         result = resume->pose;
         result->position_time = now;
@@ -645,6 +654,7 @@ void OpticalSession::close() {
     driver.reset();
     input_gate.reset();
     beam_gate.reset();
+    runtime.set_menu_cursor(MenuCursor::Inactive);
     std::exception_ptr failure;
     try {
         if (camera)

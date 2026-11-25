@@ -150,9 +150,6 @@ class FramePackageTest(unittest.TestCase):
                     self.assertEqual(
                         "menu pointer unavailable" in notice.getvalue(), "input" not in gates
                     )
-                    self.assertEqual(
-                        "laser may stay visible" in notice.getvalue(), "beam" not in gates
-                    )
                     palm.assert_called_once()
                 else:
                     with self.assertRaises(subprocess.CalledProcessError):

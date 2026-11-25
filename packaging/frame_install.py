@@ -570,15 +570,15 @@ def main():
     gates = {0: ("input", "beam"), 3: ("beam",), 4: ("input",), 5: ()}.get(compatibility.returncode)
     if gates is None:
         compatibility.check_returncode()
-    warnings = {
-        "input": "Steam menu pointer unavailable with this Steam client. Gamepad tracking can still run.",
-        "beam": "SteamVR's laser may stay visible while using the touchpad cursor.",
-    }
-    for name, warning in warnings.items():
-        if name not in gates:
-            print(warning, file=sys.stderr, flush=True)
-            if DEBUG:
-                DEBUG["record"]("Setup: " + warning)
+    if "input" not in gates:
+        warning = (
+            "Steam menu pointer unavailable with this Steam client. Gamepad tracking can still run."
+        )
+        print(warning, file=sys.stderr, flush=True)
+        if DEBUG:
+            DEBUG["record"]("Setup: " + warning)
+    elif "beam" not in gates and DEBUG:
+        DEBUG["record"]("Setup using the SteamVR cursor for the right touchpad")
     subprocess.run(
         [package / "app/optical/frame_palm_inference", PALM],
         stdin=subprocess.DEVNULL,

@@ -11,7 +11,7 @@
 namespace ct {
 struct TrackedInputState {
     double time = 0;
-    bool enabled = false, activate = true;
+    bool enabled = false, activate = true, cursor_only = false;
     float trigger = 0, grip = 0, stick_x = 0, stick_y = 0;
     float pad_x = 0, pad_y = 0, scroll_x = 0, scroll_y = 0;
     bool bumper = false, back = false, stick_click = false, stick_touch = false;
@@ -267,8 +267,13 @@ class TrackedInput final : public vr::ITrackedDeviceServerDriver {
             const bool held = armed && (state.trigger >= (trigger_down ? .45f : .5f) ||
                                         state.grip >= (grip_down ? .45f : .5f) || state.pad_click ||
                                         state.scroll_click || state.stick_click || state.bumper);
-            if (!set_tip(cursor.update(world_body(body), state.pad_x, state.pad_y, state.time,
-                                       armed && state.pad_touch, held))) {
+            auto aim = cursor.update(world_body(body), state.pad_x, state.pad_y, state.time,
+                                     armed && state.pad_touch, held);
+            // Keep SteamVR's native hit testing for windows, their handles and the taskbar.
+            if (armed && state.pad_touch && state.cursor_only)
+                for (int i = 0; i < 3; ++i)
+                    aim[12 + i] += 4.f * aim[8 + i];
+            if (!set_tip(aim)) {
                 yield();
                 return;
             }

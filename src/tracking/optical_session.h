@@ -46,7 +46,7 @@ class OpticalSession final : public TrackingSessionView {
     void clear_filter_confirmation(double now);
     int gate_index = -1;
     bool confirm_input_gate(int index, double now);
-    void update_beam(double now);
+    bool update_beam(double now);
     void send_command(const char *op);
     bool check_resume(double time, const Vector3 &led, const Quaternion &orientation);
     void discard_resume();

@@ -175,6 +175,17 @@ int main() {
     assert(step());
     assert(recv(beam_fd[1], &target, sizeof(target), 0) == 0);
     assert((packet.input.flags & 3) == 3);
+    runtime.cursor_available = true;
+    report.report.buttons = 0x00200000;
+    for (int i = 0; i < 3; ++i)
+        assert(step());
+    assert(runtime.cursor_active && (packet.input.flags & ct::wire::TouchpadCursor));
+    runtime.dashboard_pointer.reset();
+    for (int i = 0; i < 3; ++i)
+        assert(step());
+    assert(!runtime.cursor_active && !(packet.input.flags & ct::wire::TouchpadCursor));
+    runtime.dashboard_pointer = 3;
+    report.report.buttons = 0;
     assert(camera->guided);
     const auto before_bearing = step();
     assert(before_bearing);
