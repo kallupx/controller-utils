@@ -167,8 +167,15 @@ int main() {
         reader.poll(true);
         ct::ui::Presentation presentation;
         auto camera = std::make_shared<CameraSwitchFixture>();
+        auto debug = std::make_shared<CameraSwitchFixture>();
+        std::vector<std::string> debug_jobs;
         const auto child_factory =
             [&](const std::vector<std::string> &command) -> std::unique_ptr<ct::ChildChannel> {
+            if (command.size() == 5 && command[2] == (app / "optical/frame_debug.py").string()) {
+                assert(command.back() == data.string());
+                debug_jobs.push_back(command[3]);
+                return std::make_unique<CameraSwitchChild>(debug);
+            }
             if (command.back() != "--camera-switch-worker")
                 return children()(command);
             assert(command == (std::vector<std::string>{(app / "controller-utils").string(),
@@ -179,6 +186,26 @@ int main() {
         };
         ct::NativeApplicationHost host(runtime, reader, lock, presentation, app, data,
                                        child_factory, steam_ui(log));
+        const auto debug_info = [&] {
+            return std::get<ct::ui::AppInfo>(*ct::ui::command(host.app_info().get()));
+        };
+        assert(!debug_info().recording && !debug_info().debug_available);
+        host.debug_action(true);
+        assert(debug_jobs.empty() && !std::filesystem::exists(data / "debug-capture.json"));
+        host.debug_action(false);
+        assert(debug_info().recording && debug_info().debug_busy && ct::DebugLog(data).recording());
+        host.debug_action(false);
+        debug->status = 0;
+        debug->messages = {R"({"message":"Recording."})"};
+        assert(debug_info().debug_message == "Recording.");
+        host.debug_action(true);
+        debug->messages = {R"({"message":"Saved in Downloads."})"};
+        assert(debug_info().debug_message == "Saved in Downloads." && debug_info().recording);
+        host.debug_action(false);
+        debug->messages = {R"({"message":"Saved in Downloads."})"};
+        assert(!debug_info().recording && debug_info().debug_available &&
+               !ct::DebugLog(data).recording());
+        assert(debug_jobs == (std::vector<std::string>{"snapshot", "save", "save"}));
         assert(!host.system_input(false) && log->system_requests == 0);
         assert(host.system_input(true) && log->system_requests == 1);
         const auto feature_reads = hid->feature_reads;

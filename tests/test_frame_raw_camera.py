@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from concurrent.futures import Future
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -35,9 +36,9 @@ class RawCameraTest(unittest.TestCase):
         self.addCleanup(os.close, self.fd)
         os.write(self.fd, bytes([1, 2, 3, 0, 4, 5, 6, 0]))
 
-    def send(self, seq=1, stride=4):
-        header = {"seq": seq, "time": 1.0, "exposure": "ir", "views": [["left", stride]]}
-        self.sender.sendmsg(
+    def send(self, seq=1, stride=4, *, peer=None, exposure="ir", timestamp=1.0):
+        header = {"seq": seq, "time": timestamp, "exposure": exposure, "views": [["left", stride]]}
+        (peer or self.sender).sendmsg(
             [json.dumps(header).encode()],
             [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", [self.fd]))],
         )
@@ -84,11 +85,14 @@ class RawCameraTest(unittest.TestCase):
             listener.settimeout(1)
             with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as abandoned:
                 abandoned.connect(path)
+            fcntl.fcntl(self.fd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_SHRINK)
             polls = 0
+            live = None
 
             def poll(track):
-                nonlocal polls
+                nonlocal polls, live
                 polls += 1
+                self.assertLess(polls, 16)
                 if polls == 2:
                     listener.accept()[0].close()  # Make room for the worker.
                 if polls == 4:
@@ -96,17 +100,30 @@ class RawCameraTest(unittest.TestCase):
                 if polls == 6:
                     with listener.accept()[0] as peer:
                         peer.sendall(b'{"version":1}')
+                if polls == 9:
+                    live = listener.accept()[0]
+                    self.addCleanup(live.close)
+                    live.settimeout(1)
+                    live.sendall(b'{"version":1}')
+                    self.send(1, peer=live, exposure="scene")
+                    self.send(2, peer=live, timestamp=0.5)
+                    self.send(3, peer=live)
                 return True
 
             with (
                 patch.object(self.raw, "address", return_value=path),
+                patch.object(self.worker, "raw_time", return_value=1),
                 patch.object(
-                    self.raw, "parse_calibration", return_value=("cams", "config")
+                    self.raw, "parse_calibration", return_value=(self.cameras, "config")
                 ) as parse,
                 self.worker.camera_feed("HEADSET", SimpleNamespace(poll=poll)) as feed,
             ):
-                self.assertEqual(feed[1:], ("cams", "config"))
-            parse.assert_called_once_with({"version": 1}, "HEADSET")
+                self.assertEqual(feed[1:], (self.cameras, "config", 3))
+                self.assertEqual(
+                    [json.loads(live.recv(64))["release"] for _ in range(3)], [1, 2, 3]
+                )
+            self.assertEqual(parse.call_count, 2)
+            parse.assert_called_with({"version": 1}, "HEADSET")
 
     def test_camera_wait_honors_stop_and_reports_a_persistently_missing_provider(self):
         worker = self.worker
@@ -119,13 +136,122 @@ class RawCameraTest(unittest.TestCase):
             parent.stopped = True
             with worker.camera_feed("HEADSET", parent) as feed:
                 self.assertIsNone(feed)
-            parent.stopped = False
             with (
-                patch.object(worker.time, "monotonic", side_effect=[0, 21]),
-                self.assertRaisesRegex(TimeoutError, "restart SteamVR"),
+                tempfile.TemporaryDirectory() as directory,
+                patch.object(self.raw, "address", return_value=directory + "/missing.sock"),
+                patch("frame_camera_runtime.Path", return_value=Path(directory)),
+                patch.object(parent, "poll", side_effect=[True, True, False]),
+                patch.object(worker.time, "monotonic", return_value=0) as clock,
+                patch.object(
+                    worker.time, "sleep", side_effect=lambda _: setattr(clock, "return_value", 21)
+                ),
+                patch.object(worker, "emit") as emit,
+                worker.camera_feed("HEADSET", parent) as feed,
             ):
-                with worker.camera_feed("HEADSET", parent):
-                    self.fail("A missing provider opened a feed")
+                self.assertIsNone(feed)
+            emit.assert_called_once()
+            self.assertEqual(emit.call_args.args, ("waiting",))
+            self.assertIn("Restart Frame", emit.call_args.kwargs["message"])
+
+    def test_busy_palm_process_retries_before_opening_the_camera(self):
+        worker = self.worker
+        with (
+            patch.object(worker.signal, "signal"),
+            patch.object(worker.Parent, "poll", return_value=True),
+            patch.object(
+                worker,
+                "FramePalmModel",
+                side_effect=[BlockingIOError(), BlockingIOError(), nullcontext()],
+            ),
+            patch.object(worker.time, "monotonic", return_value=0) as clock,
+            patch.object(
+                worker.time, "sleep", side_effect=lambda _: setattr(clock, "return_value", 11)
+            ),
+            patch.object(
+                worker.frame_debug,
+                "capture",
+                side_effect=lambda *_: ("123", clock.return_value > 0, 0),
+            ),
+            patch.object(worker.frame_debug, "send") as logged,
+            patch.object(worker, "emit") as emit,
+            patch.object(worker, "camera_feed", return_value=nullcontext(None)) as feed,
+        ):
+            worker.main("HEADSET")
+        feed.assert_called_once()
+        emit.assert_called_once()
+        self.assertIn("palm tracking", emit.call_args.kwargs["message"])
+        self.assertEqual(
+            sum("Palm helper launch failed" in call.args[1] for call in logged.call_args_list), 1
+        )
+
+    def test_request_ready_rearms_dark_baseline(self):
+        worker = self.worker
+        parent = worker.Parent()
+        parent.dark_since = 1
+        track = SimpleNamespace(
+            led=worker.LedTracker(dict.fromkeys(("a", "b", "c", "d"))),
+            lit_requested=True,
+            first_ir=1,
+            enabled_at=None,
+        )
+        track.led.baselines["a"] = 5
+        with (
+            patch.object(worker.select, "select", side_effect=[([0], [], []), ([], [], [])]),
+            patch.object(os, "read", return_value=b'{"op":"request_ready"}\n'),
+            patch.object(worker, "emit") as emit,
+        ):
+            self.assertTrue(parent.poll(track))
+        emit.assert_called_once_with("ready")
+        self.assertIsNone(parent.dark_since)
+        self.assertIsNone(track.first_ir)
+        self.assertFalse(track.lit_requested)
+        self.assertFalse(any(track.led.baselines.values()))
+
+    def test_live_peer_close_and_stall_request_a_new_session(self):
+        worker = self.worker
+        fcntl.fcntl(self.fd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_SHRINK)
+        for case in ("ir", "scene", "stale", "quiet", "closed"):
+            if case in ("ir", "scene", "stale"):
+                self.send(2, exposure="scene" if case == "scene" else "ir", timestamp=1)
+            elif case == "closed":
+                self.sender.close()
+            polls = [True, True, False] if case == "closed" else [True, True, True, False]
+            with (
+                self.subTest(case=case),
+                patch.object(worker.signal, "signal"),
+                patch.object(worker.Parent, "poll", side_effect=polls),
+                patch.object(worker, "FramePalmModel", return_value=nullcontext()),
+                patch.object(worker, "CameraTracking"),
+                patch.object(
+                    worker,
+                    "camera_feed",
+                    return_value=nullcontext((self.receiver, self.cameras, {}, 1)),
+                ),
+                patch.object(
+                    worker.select,
+                    "select",
+                    return_value=([self.receiver] if case != "quiet" else [], [], []),
+                ),
+                patch.object(worker, "raw_time", return_value=2 if case == "stale" else 1),
+                patch.object(
+                    worker.time,
+                    "monotonic",
+                    side_effect=[0, 0, 0, 0, 0, 6] if case == "ir" else [0, 0, 0, 0, 6],
+                ),
+                patch.object(worker.frame_debug, "capture", return_value=("1", case == "ir", 0)),
+                patch.object(worker.frame_debug, "send") as logged,
+                patch.object(worker, "emit") as emit,
+            ):
+                worker.main("HEADSET")
+            self.assertEqual(
+                [args.args[0] for args in emit.call_args_list], ["ready", "disconnected"]
+            )
+            if case == "ir":
+                self.assertTrue(
+                    any("ir_row_bytes=4 " in call.args[1] for call in logged.call_args_list)
+                )
+            if case in ("ir", "scene", "stale"):
+                self.assertEqual(json.loads(self.sender.recv(64)), {"release": 2})
 
     def test_read_only_shared_backing_with_offset(self):
         offset = os.sysconf("SC_PAGE_SIZE")

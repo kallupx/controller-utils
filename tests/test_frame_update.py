@@ -1,4 +1,7 @@
+import contextlib
+import fcntl
 import hashlib
+import io
 import json
 import os
 import runpy
@@ -37,6 +40,27 @@ class FrameUpdateTest(unittest.TestCase):
         self.release = {"version": "0.3.0", "sequence": 15, "platform": "linuxarm64"}
         self.current = {"version": "0.2.0", "sequence": 14, "platform": "linuxarm64"}
         self.data.joinpath("calibration").write_text("preserve this")
+
+    def test_busy_updater_preserves_the_running_operations_status(self):
+        (self.root / "release.json").write_text(json.dumps(self.release))
+        status = self.data / "frame-update.json"
+        status.write_text('{"state":"busy","message":"Installing update…"}')
+        before = status.read_bytes()
+        main = UPDATER["main"]
+        with (
+            (self.data / "frame-update.lock").open("a") as lock,
+            patch.dict(
+                main.__globals__,
+                __file__=str(self.root / "frame_update.py"),
+                frame_channel=lambda: "beta",
+            ),
+            patch("sys.argv", ["frame_update.py", "check"]),
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+        ):
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.assertEqual(main(), 1)
+        self.assertIn("already running", stderr.getvalue())
+        self.assertEqual(status.read_bytes(), before)
 
     def sign(self, channel, mode="--unattended"):
         filename = UPDATER["artifact"](channel, self.release["version"])

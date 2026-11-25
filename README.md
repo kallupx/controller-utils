@@ -56,6 +56,12 @@ If the error appeared in Konsole **during installation**, check the `Setup log`
 path printed by the install command. If another setup is running, let it finish
 before starting one again.
 
+## Debug logs
+
+Turn on **Debug logging** in the **App** tab, reproduce the issue, then turn
+logging off. Attach the `controller-utils-debug-*.txt` file from **Downloads**
+to your bug report.
+
 ## Controls
 
 | Input | Action |

@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import re
+import runpy
 import shutil
 import signal
 import stat
@@ -24,6 +25,7 @@ PALM = Path(
     "2024-12-13_16-02_StereoSQRT2-half-WithLongSleevesSynthetic_ch199_partial_AU_WU.onnx"
 )
 BASE = Path.home() / ".local/share/controller-utils"
+DEBUG = None
 UNITS = Path.home() / ".local/share/systemd/user"
 RULE = Path("/etc/udev/rules.d/70-controller-utils.rules")
 KEEP = Path("/etc/atomic-update.conf.d/controller-utils-frame.conf")
@@ -188,8 +190,17 @@ def ready():
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
     expected = {
         f"@controller-utils.{name}.v1.{os.getuid()}" for name in ("optical", "input", "beam")
-    } | {str(runtime / "controller-utils-camera.sock")}
+    }
+    camera_runtime = runpy.run_path(str(BASE / "app/optical/frame_camera_runtime.py"))
+    if warning := camera_runtime["camera_device_warning"]():
+        # XRService can abort before creating its socket when the kernel has no camera devices.
+        print(warning, file=sys.stderr, flush=True)
+        if DEBUG:
+            DEBUG["record"]("Setup: " + warning)
+    else:
+        expected.add(str(runtime / "controller-utils-camera.sock"))
     deadline = time.monotonic() + 90
+    listening = set()
     while time.monotonic() < deadline:
         entries = (
             line.split(maxsplit=7) for line in Path("/proc/net/unix").read_text().splitlines()
@@ -198,6 +209,16 @@ def ready():
         if expected <= listening:
             return
         time.sleep(0.2)
+    if DEBUG:
+        DEBUG["record"](
+            "Setup timed out waiting for "
+            + " ".join(
+                sorted(
+                    "camera" if name.startswith("/") else name.split(".")[1]
+                    for name in expected - listening
+                )
+            )
+        )
     raise RuntimeError("SteamVR did not start all Controller Utils connections")
 
 
@@ -501,6 +522,7 @@ def uninstall(package):
 
 
 def main():
+    global DEBUG
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--calibration", type=Path)
     action = parser.add_mutually_exclusive_group()
@@ -513,6 +535,10 @@ def main():
         raise ValueError("Run this installer as the Steam Frame user")
     package = Path(__file__).resolve().parent
     channel, build_id = verify_package(package)
+    if (BASE / "app-data/debug-capture.json").is_file():
+        DEBUG = runpy.run_path(str(package / "app/optical/frame_debug.py"))
+        mode = "check" if args.check else "uninstall" if args.uninstall else "install"
+        DEBUG["record"](f"Setup {mode} started package_channel={channel} package_build={build_id}")
     branch = command("atomupd-manager", "tracked-branch", capture=True).stdout.strip()
     variant = command("atomupd-manager", "tracked-variant", capture=True).stdout.strip()
     if (
@@ -523,6 +549,8 @@ def main():
         raise ValueError(f"This package requires Steam Frame's {channel} channel")
     if args.uninstall:
         uninstall(package)
+        if DEBUG:
+            DEBUG["record"]("Uninstall finished")
         return
     installed = {
         key: value.strip('"')
@@ -535,6 +563,8 @@ def main():
             f"Package tested on SteamOS {build_id}. Running {installed.get('BUILD_ID', 'unknown')}."
         )
     camera_config = calibration(args.calibration, package)
+    if DEBUG:
+        DEBUG["record"]("Setup loaded camera calibration")
     command(package / "frame-compatibility")
     subprocess.run(
         [package / "app/optical/frame_palm_inference", PALM],
@@ -542,10 +572,14 @@ def main():
         check=True,
         timeout=30,
     )
+    if DEBUG:
+        DEBUG["record"]("Setup compatibility check and CPU palm model passed")
     if args.check:
         print(f"Frame {channel} package preflight passed")
     else:
         install(package, camera_config, args.unattended, args.legacy_migration)
+    if DEBUG:
+        DEBUG["record"]("Setup finished")
 
 
 if __name__ == "__main__":
@@ -553,4 +587,6 @@ if __name__ == "__main__":
     try:
         main()
     except (OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as error:
+        if DEBUG:
+            DEBUG["failure"]("Setup", error)
         sys.exit(str(error))

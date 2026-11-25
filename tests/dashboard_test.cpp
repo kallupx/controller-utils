@@ -316,6 +316,17 @@ int main() {
             throw std::runtime_error("controls image failed");
         dashboard.page = 2;
         dashboard.update = ct::ui::SoftwareUpdate{"Check for a new release.", true, false, false};
+        assert(std::string(dashboard.hit(320, 610)) == "debug_logging");
+        assert(!dashboard.hit(1050, 685));
+        accept_text(
+            dashboard,
+            R"({"op":"app_info","version":"0.1.0","debug":{"recording":true,"available":true,"busy":true,"message":"Saving to Downloads..."}})");
+        assert(dashboard.debug_recording && !dashboard.hit(320, 610) && !dashboard.hit(1050, 685));
+        accept_text(
+            dashboard,
+            R"({"op":"app_info","version":"0.1.0","debug":{"recording":false,"available":true,"busy":false,"message":"Saved in Downloads."}})");
+        assert(!dashboard.debug_recording &&
+               std::string(dashboard.hit(1050, 685)) == "save_debug_log");
         assert(std::string(dashboard.hit(320, 394)) == "automatic_updates");
         assert(std::string(dashboard.hit(1000, 500)) == "check_updates");
         dashboard.update->ready = true;

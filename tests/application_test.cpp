@@ -47,7 +47,10 @@ int main() {
             host, {}, true, [&] { return host.now; }, [&] { return host.now + 1000; });
         app.step(true, true, {});
         assert(!host.requested_resume);
+        host.now += .25;
         app.step(false, false, {});
+        assert(j::encode(host.trace.get()).find("Waiting for Frame's head tracking") !=
+               std::string::npos);
         host.now += 60;
         app.step(true, true, {});
         assert(host.requested_resume && host.requested_resume->led == host.checkpoint->led);
@@ -317,8 +320,22 @@ int main() {
         host.now += .02;
         app.step(true, true, {});
         assert(count(host, "track") == 2);
-        app.close();
+        current = j::parse(R"({"fail":{"step":{"kind":"camera_disconnected","message":""}}})");
+        host.current = current.get();
+        app.step(true, true, {});
         assert(count(host, "close") == 2);
+        current = j::parse("{}");
+        host.current = current.get();
+        app.step(true, true, {});
+        assert(count(host, "track") == 3);
+        current = j::parse(
+            R"({"fail":{"step":{"kind":"camera_disconnected","message":""},"close":{"kind":"runtime","message":"restore failed"}}})");
+        host.current = current.get();
+        app.step(true, true, {});
+        app.step(true, true, {});
+        assert(count(host, "track") == 3 && count(host, "close") == 3);
+        app.close();
+        assert(count(host, "close") == 3);
     }
     std::cout << "application: event boundaries, failure cleanup, retries and 100 lifecycle cycles "
                  "passed\n";

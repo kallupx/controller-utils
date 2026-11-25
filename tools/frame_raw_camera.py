@@ -40,9 +40,12 @@ def address():
 
 def receive(sock, stack):
     item = array.array("i")
-    data, control, flags, _ = sock.recvmsg(
-        131072, socket.CMSG_SPACE(4 * item.itemsize), socket.MSG_CMSG_CLOEXEC
-    )
+    try:
+        data, control, flags, _ = sock.recvmsg(
+            131072, socket.CMSG_SPACE(4 * item.itemsize), socket.MSG_CMSG_CLOEXEC
+        )
+    except (ConnectionError, TimeoutError) as exc:
+        raise EOFError("Raw camera feed disconnected") from exc
     fds = []
     for level, kind, payload in control:
         if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
@@ -151,5 +154,8 @@ def frame(sock, cameras, previous, consume):
             )
         events = consume(kind, t, images)
         images.clear()
-    sock.sendall(json.dumps({"release": seq}).encode())
+    try:
+        sock.sendall(json.dumps({"release": seq}).encode())
+    except (ConnectionError, TimeoutError) as exc:
+        raise EOFError("Raw camera feed disconnected") from exc
     return seq, events

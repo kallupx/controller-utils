@@ -41,6 +41,7 @@ OPTICAL_FILES = (
     "frame_palm_inference",
     "frame_camera_runtime.py",
     "frame_camera_worker.py",
+    "frame_debug.py",
     "frame_raw_camera.py",
     "frame_led_tracking.py",
     "frame_palm_bootstrap.py",

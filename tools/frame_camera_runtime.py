@@ -21,6 +21,12 @@ def run(*args):
     subprocess.run(args, check=True, stdout=sys.stderr, stdin=subprocess.DEVNULL, timeout=180)
 
 
+def camera_device_warning():
+    devices = Path("/sys/class/video4linux")
+    if devices.is_dir() and not any(devices.glob("v4l-subdev*")):
+        return "SteamOS camera devices are missing. Restart Frame and check its own passthrough."
+
+
 def numpy_python(data):
     target = data / f"numpy-{NUMPY}-{sys.implementation.cache_tag}"
     python = target / "bin/python"
@@ -83,6 +89,10 @@ def main():
         python = numpy_python(optical.parents[1] / "app-data")
         os.execv(python, [python, "-Bu", optical / "frame_camera_worker.py", sys.argv[1]])
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        sys.path.insert(0, str(optical))
+        from frame_debug import failure
+
+        failure("Camera Python startup", error)
         print(
             json.dumps(dict(op="error", message=f"Camera Python setup failed: {error}")), flush=True
         )

@@ -8,14 +8,17 @@ import socket
 import struct
 import sys
 import time
+import traceback
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
+import frame_debug
 import frame_raw_camera as raw
 import numpy as np  # noqa: E402
+from frame_camera_runtime import camera_device_warning
 from frame_led_tracking import LedTracker, centroids
 from frame_palm_bootstrap import FramePalmModel, PalmBootstrap
 
@@ -25,6 +28,8 @@ def raw_time():
 
 
 def emit(op, **fields):
+    if op in ("waiting", "ready", "light", "seed", "disconnected"):
+        frame_debug.record("Camera " + op + (" " + fields["message"] if op == "waiting" else ""))
     print(json.dumps(dict(op=op, **fields), allow_nan=False), flush=True)
 
 
@@ -191,8 +196,18 @@ class Parent:
                                 (msg["time"], (point - track.head[:, 3]) @ track.head[:, :3])
                             )
                 elif op == "dark":
+                    frame_debug.record("Controller LED off for baseline")
                     self.dark_since = msg["time"]
+                elif op == "request_ready":
+                    if track is not None:
+                        # The host hasn't armed the LED. Collect a fresh dark baseline after its reply.
+                        self.dark_since = None
+                        track.led = LedTracker(track.led.cameras)
+                        track.first_ir = track.enabled_at = None
+                        track.lit_requested = False
+                        emit("ready")
                 elif op == "lit" and track is not None:
+                    frame_debug.record("Controller LED on")
                     track.enabled_at = msg["time"]
                 elif op == "reacquire" and track is not None:
                     track.reacquire()
@@ -213,41 +228,71 @@ class Parent:
 
 @contextmanager
 def camera_feed(headset, parent):
-    # XRService accepts connections from its capture loop, which pauses in standby.
-    deadline = time.monotonic() + 20
+    # XRService accepts readers from its capture loop, which can stay paused in standby.
+    next_notice = time.monotonic() + 2
+    last_notice = None
+    connect_errno = None
+    next_error_log = 0
 
-    def waiting():
+    def waiting(message):
+        nonlocal next_notice, last_notice
         if not parent.poll(None):
             return False
-        if time.monotonic() >= deadline:
-            raise TimeoutError(
-                "Frame cameras did not start. Put on the headset to wake it. "
-                "If it is already awake, restart SteamVR."
-            )
+        if time.monotonic() >= next_notice:
+            message = camera_device_warning() or message
+            if message != last_notice:
+                emit("waiting", message=message)
+                last_notice = message
+            next_notice = time.monotonic() + 2
         return True
 
-    while waiting():
+    while waiting(
+        "Waiting for SteamVR to share its tracking cameras. Put Frame on or restart SteamVR."
+    ):
         with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as sock:
             sock.settimeout(1)
             try:
                 sock.connect(str(raw.address()))
-            except (FileNotFoundError, ConnectionRefusedError, BlockingIOError):
+            except (FileNotFoundError, ConnectionRefusedError, BlockingIOError) as error:
+                now = time.monotonic()
+                if connect_errno != error.errno or now >= next_error_log:
+                    frame_debug.failure("Connecting to camera provider", error)
+                    connect_errno = error.errno
+                    next_error_log = now + 10
                 time.sleep(0.1)
                 continue
+            connect_errno = None
             _, uid, _ = struct.unpack(
                 "3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
             )
             if uid != os.getuid():
                 raise ValueError("Camera provider belongs to a different user")
-            while waiting():
+            calibration = None
+            seq = -1
+            while waiting(
+                "Waiting for tracking-camera images. Put Frame on and check its own passthrough."
+            ):
                 if not select.select([sock], [], [], 0.1)[0]:
                     continue
                 try:
-                    calibration = raw.calibration(sock, headset)
-                except (ConnectionResetError, EOFError):
-                    break  # The camera service restarted during the handshake.
-                yield sock, *calibration
-                return
+                    if calibration is None:
+                        calibration = raw.calibration(sock, headset)
+                        frame_debug.record(
+                            f"Camera calibration accepted views={len(calibration[0])}"
+                        )
+                        continue
+                    seq, live = raw.frame(
+                        sock,
+                        calibration[0],
+                        seq,
+                        lambda kind, t, images: kind == 38 and -0.02 <= raw_time() - t <= 0.14,
+                    )
+                except EOFError:
+                    frame_debug.record("Camera provider closed during startup")
+                    break  # A provider can exit after calibration but before the first IR image.
+                if live:
+                    yield sock, *calibration, seq
+                    return
     yield None
 
 
@@ -260,43 +305,103 @@ def main(headset):
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     with ExitStack() as stack:
+        frame_debug.record("Camera worker starting")
+        busy = False
+        next_error_log = 0
+        while parent.poll(None):
+            try:
+                model = stack.enter_context(FramePalmModel())
+                frame_debug.record("Palm helper started")
+                break
+            except BlockingIOError as exc:
+                now = time.monotonic()
+                if now >= next_error_log:
+                    frame_debug.failure("Palm helper launch", exc)
+                    next_error_log = now + 10
+                if not busy:
+                    emit(
+                        "waiting",
+                        message="SteamOS is busy. Waiting to start palm tracking. Close unused apps if this persists.",
+                    )
+                    busy = True
+                time.sleep(0.25)
+        else:
+            return
         feed = stack.enter_context(camera_feed(headset, parent))
         if feed is None:
             return
-        sock, cams, config = feed
-        model = stack.enter_context(FramePalmModel())
+        sock, cams, config, seq = feed
         pool = stack.enter_context(ThreadPoolExecutor(max_workers=1))
         track = CameraTracking(cams, config, model, pool)
         parent.last = time.monotonic()
         emit("ready")
-        seq = -1
-        last_frame = time.monotonic()
+        last_ir = time.monotonic()
+        stats_since = last_ir
+        token, recording, _ = frame_debug.capture()
+        ir = scene = stale = fixes = 0
+        ir_row_bytes = "none"
 
         def consume(kind, t, images):
-            if (
-                parent.dark_since is None
-                or t < parent.dark_since
-                or not -0.02 <= raw_time() - t <= 0.14
-            ):
+            nonlocal last_ir, ir, scene, stale, fixes, ir_row_bytes
+            if not -0.02 <= raw_time() - t <= 0.14:
+                if recording:
+                    stale += 1
                 return []
-            return track.exposure(
+            if recording:
+                if kind == 38 and ir == 0:
+                    ir_row_bytes = ",".join(str(im.strides[0]) for im in images.values())
+                ir += kind == 38
+                scene += kind != 38
+            if kind == 38:
+                last_ir = time.monotonic()
+            if parent.dark_since is None or t < parent.dark_since:
+                return []
+            events = track.exposure(
                 kind, t, images, lambda ts: -0.02 <= raw_time() - ts <= 0.14, borrowed=True
             )
+            if recording and track.fix is not None and kind == 38 and track.fix[0] == t:
+                fixes += 1
+            return events
 
         while parent.poll(track):
+            now = time.monotonic()
+            if now - stats_since >= 5:
+                current, active, _ = frame_debug.capture()
+                if recording and active and token == current:
+                    frame_debug.send(
+                        token,
+                        f"Camera {now - stats_since:.1f}s ir={ir} scene={scene} stale={stale} ir_row_bytes={ir_row_bytes} "
+                        f"baseline_views={sum(n >= 5 for n in track.led.baselines.values())} "
+                        f"led_fixes={fixes} lit={track.enabled_at is not None} palm_streak={track.palm.streak} aligned={track.seeded}",
+                    )
+                token, recording, stats_since = current, active, now
+                ir = scene = stale = fixes = 0
+                ir_row_bytes = "none"
+            if now - last_ir > 5:
+                frame_debug.record("Camera stream stalled: no fresh IR for five seconds")
+                break
             if not select.select([sock], [], [], 0.05)[0]:
-                if time.monotonic() - last_frame > 5:
-                    raise TimeoutError("Live camera provider stopped sending frames")
                 continue
-            seq, events = raw.frame(sock, cams, seq, consume)
-            last_frame = time.monotonic()
+            try:
+                seq, events = raw.frame(sock, cams, seq, consume)
+            except EOFError:
+                frame_debug.record("Camera provider disconnected while streaming")
+                break
             for event in events:
                 emit(**event)
+        else:
+            return
+    # All camera leases and the palm helper are released before asking the app to rearm.
+    emit("disconnected")
+    while parent.poll(None):
+        select.select([0], [], [], 0.1)
 
 
 if __name__ == "__main__":
     try:
         main(sys.argv[1])
     except Exception as exc:
+        frame_debug.failure("Camera worker", exc)
+        traceback.print_exc()
         emit("error", message=str(exc))
         sys.exit(1)

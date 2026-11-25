@@ -11,6 +11,7 @@ class Camera final : public ct::ChildChannel {
     std::vector<ct::json::Value> events;
     bool lit = false, stopped = false, guided = false, checking_resume = false, resumed = false;
     unsigned restarts = 0;
+    unsigned ready_requests = 0;
     std::optional<int> exit_status() override {
         return {};
     }
@@ -19,6 +20,8 @@ class Camera final : public ct::ChildChannel {
         const auto op = ct::json::string(ct::json::field(msg.get(), "op"));
         if (op == "lit")
             lit = true;
+        if (op == "request_ready")
+            ++ready_requests;
         if (op == "reacquire")
             ++restarts;
         if (op == "check_resume")
@@ -118,6 +121,12 @@ int main() {
     };
     micros += 6000000;
     assert(!step() && !hid->raw && hid->brightness == 25);
+    camera->events.push_back(
+        ct::json::parse(R"({"op":"waiting","message":"Waiting for Frame to wake."})"));
+    camera->emit("light", ct::raw_time());
+    assert(!step() && !hid->raw && hid->brightness == 25 && camera->ready_requests == 1);
+    assert(!step() && session.status == "Waiting for Frame to wake.");
+    camera->emit("ready", ct::raw_time());
     camera->emit("ready", ct::raw_time());
     assert(!step() && hid->raw && hid->brightness == 0);
     camera->emit("light", ct::raw_time());
@@ -310,6 +319,12 @@ int main() {
     const auto clock_recovered = step();
     assert(clock_recovered && session.acquired() && camera->restarts == 2);
 
+    camera->emit("disconnected", ct::raw_time());
+    try {
+        step();
+        assert(false);
+    } catch (const ct::CameraDisconnected &) {
+    }
     session.close();
     assert(camera->stopped && !hid->raw && hid->brightness == 25);
 

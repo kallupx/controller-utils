@@ -163,7 +163,7 @@ build/optical/frame_input_hook.so: $(FRAME_INPUT_HOOK_SOURCES) src/steamvr/optic
 build/optical/%.py: tools/%.py
 	install -Dm644 $< $@
 
-frame-optical: all build/frame-compatibility build/optical/frame_palm_inference $(addprefix build/optical/,frame_raw_camera.py frame_camera_runtime.py frame_camera_worker.py frame_led_tracking.py frame_palm_bootstrap.py frame_camera_calibration.py)
+frame-optical: all build/frame-compatibility build/optical/frame_palm_inference $(addprefix build/optical/,frame_raw_camera.py frame_camera_runtime.py frame_camera_worker.py frame_led_tracking.py frame_palm_bootstrap.py frame_camera_calibration.py frame_debug.py)
 
 build/frame-compatibility: tools/frame_compatibility.cpp $(filter-out tools/frame_input_hook.cpp,$(FRAME_INPUT_HOOK_SOURCES)) src/steamvr/ui_gate.h
 	mkdir -p $(@D)

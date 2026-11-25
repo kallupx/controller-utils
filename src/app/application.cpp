@@ -132,6 +132,8 @@ bool Application::action(json_object *event) {
         host_.save(options_);
     } else if (name == "check_updates" || name == "apply_update") {
         host_.update(name == "apply_update");
+    } else if (name == "debug_logging" || name == "save_debug_log") {
+        host_.debug_action(name == "save_debug_log");
     } else if (name == "input_toggle")
         send_op("input_toggle");
     else if (name == "pinned") {
@@ -334,10 +336,11 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
         }
         if (!options_.tracking_enabled)
             status_ = "Tracking disabled.";
+        else if (!awake)
+            status_ = "Waiting for Frame's head tracking. Put Frame on. If its own passthrough "
+                      "also fails, restart Frame.";
         else if (!connected)
             status_ = "Waiting for gamepad. Connect it to Frame by Bluetooth.";
-        else if (!awake)
-            status_ = "Put Frame on to start tracking.";
         if (options_.tracking_enabled && awake && connected && !session_ &&
             monotonic_() >= retry_) {
             session_ = host_.track(options_, tracking_resume_);
@@ -366,6 +369,7 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
     } catch (const std::exception &error) {
         status_ = error.what();
         const bool asleep = status_.rfind("Headset asleep", 0) == 0;
+        bool reconnect = dynamic_cast<const CameraDisconnected *>(&error) != nullptr;
         if (session_ && options_.tracking_enabled && !restart)
             tracking_resume_ = session_->checkpoint();
         send_op("hide");
@@ -376,9 +380,10 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
             close_session();
         } catch (const std::exception &cleanup) {
             status_ += " Cleanup: " + std::string(cleanup.what());
+            reconnect = false;
         }
-        retry_ = monotonic_() + (asleep ? .5 : retryable(error) ? 5 : 15);
-        tracking_problem_ = status_;
+        tracking_problem_ = reconnect ? std::nullopt : std::optional(status_);
+        retry_ = reconnect ? 0 : monotonic_() + (asleep ? .5 : retryable(error) ? 5 : 15);
         host_.log(status_);
     }
     if (keyboard_.typing != last_keyboard_typing_) {
@@ -400,6 +405,8 @@ void Application::step(bool awake, bool connected, const std::vector<ControllerI
         last_keyboard_log_ = now;
     }
     if (now - last_status_ >= .2) {
+        host_.debug_state(awake, connected, bool(session_), session_ && session_->acquired(),
+                          status_);
         if (!session_) {
             if (options_.tracking_enabled && connected && awake && now < retry_)
                 host_.send(tracking_feedback(raw_(), "error",

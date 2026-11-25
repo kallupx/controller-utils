@@ -31,6 +31,8 @@ class ApplicationHost {
         return {};
     }
     virtual void update(bool) {}
+    virtual void debug_action(bool) {}
+    virtual void debug_state(bool, bool, bool, bool, const std::string &) {}
     virtual void log(const std::string &message) = 0;
 };
 

@@ -101,6 +101,8 @@ class Host : public ct::ApplicationHost {
         if (auto error = failures ? j::find(failures, name) : nullptr) {
             const auto text = j::string(j::field(error, "message"));
             const auto kind = j::string(j::field(error, "kind"));
+            if (kind == "camera_disconnected")
+                throw ct::CameraDisconnected();
             if (kind == "connection")
                 throw ct::ConnectionError(text);
             if (kind == "value")

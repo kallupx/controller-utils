@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
         if (!api)
             throw std::runtime_error("SteamVR palm inference API is unavailable");
         Ort::InitApi(api);
-        Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "frame-palm");
+        Ort::Env env(ORT_LOGGING_LEVEL_ERROR, "frame-palm");
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1);
         Ort::Session model(env, argv[1], options);
