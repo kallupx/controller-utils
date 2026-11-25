@@ -186,11 +186,10 @@ def stop_services(*, check=True):
     )
 
 
-def ready():
+def ready(require_input):
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-    expected = {
-        f"@controller-utils.{name}.v1.{os.getuid()}" for name in ("optical", "input", "beam")
-    }
+    names = ("optical", "beam", "input") if require_input else ("optical", "beam")
+    expected = {f"@controller-utils.{name}.v1.{os.getuid()}" for name in names}
     camera_runtime = runpy.run_path(str(BASE / "app/optical/frame_camera_runtime.py"))
     if warning := camera_runtime["camera_device_warning"]():
         # XRService can abort before creating its socket when the kernel has no camera devices.
@@ -246,7 +245,7 @@ def legacy_installation():
     return True
 
 
-def retire_legacy(sources, receipt, migrate=False, missing=()):
+def retire_legacy(sources, receipt, migrate, missing, require_input):
     stop_services()
     try:
         if migrate:
@@ -266,7 +265,7 @@ def retire_legacy(sources, receipt, migrate=False, missing=()):
             atomic_text(receipt, json.dumps(sorted(owned | created)), 0o600)
     finally:
         start_services()
-    ready()
+    ready(require_input)
 
 
 def validate_calibration(package, data, camera_config):
@@ -329,7 +328,7 @@ def setup_lock(data):
         yield
 
 
-def install(package, camera_config, unattended=False, migrate=False):
+def install(package, camera_config, unattended=False, migrate=False, require_input=True):
     data, app = BASE / "app-data", BASE / "app"
     data.mkdir(parents=True, exist_ok=True, mode=0o700)
     with setup_lock(data):
@@ -406,7 +405,7 @@ def install(package, camera_config, unattended=False, migrate=False):
             command(app / "controller-utils", "--prepare-registration")
             systemctl("daemon-reload")
             start_services()
-            ready()
+            ready(require_input)
             for path in () if migrate else missing:
                 command("sudo", "install", "-m", "0644", sources[path], path)
                 created_policies.append(path)
@@ -443,7 +442,7 @@ def install(package, camera_config, unattended=False, migrate=False):
                 start_services()
             raise
         if legacy:
-            retire_legacy(sources, receipt, migrate, missing)
+            retire_legacy(sources, receipt, migrate, missing, require_input)
         old_unit = UNITS / LEGACY_UNIT
         if (
             not old_unit.is_symlink()
@@ -565,7 +564,16 @@ def main():
     camera_config = calibration(args.calibration, package)
     if DEBUG:
         DEBUG["record"]("Setup loaded camera calibration")
-    command(package / "frame-compatibility")
+    compatibility = command(package / "frame-compatibility", check=False)
+    if compatibility.returncode == 3:
+        warning = (
+            "Steam menu pointer unavailable with this Steam client. Gamepad tracking can still run."
+        )
+        print(warning, file=sys.stderr, flush=True)
+        if DEBUG:
+            DEBUG["record"]("Setup: " + warning)
+    else:
+        compatibility.check_returncode()
     subprocess.run(
         [package / "app/optical/frame_palm_inference", PALM],
         stdin=subprocess.DEVNULL,
@@ -573,11 +581,17 @@ def main():
         timeout=30,
     )
     if DEBUG:
-        DEBUG["record"]("Setup compatibility check and CPU palm model passed")
+        DEBUG["record"]("Setup loaded CPU palm model")
     if args.check:
         print(f"Frame {channel} package preflight passed")
     else:
-        install(package, camera_config, args.unattended, args.legacy_migration)
+        install(
+            package,
+            camera_config,
+            args.unattended,
+            args.legacy_migration,
+            compatibility.returncode == 0,
+        )
     if DEBUG:
         DEBUG["record"]("Setup finished")
 

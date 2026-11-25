@@ -8,19 +8,15 @@ int main(int argc, char **argv) {
     using namespace ct::steamvr::compatibility;
     if (argc != 1 && argc != 3)
         return 2;
-    try {
-        for (const auto &[kind, path] :
-             {std::pair{GateKind::Beam, argc == 3 ? argv[1] : Compositor.path},
-              std::pair{GateKind::Input, argc == 3 ? argv[2] : SteamWebHelper.path}}) {
-            try {
-                ct::steamvr::resolve_gate_layout(kind, ct::read_file(path, 32 * 1024 * 1024));
-            } catch (const std::exception &error) {
-                throw std::runtime_error(std::string(path) + ": " + error.what());
-            }
+    for (const auto &[kind, path] :
+         {std::pair{GateKind::Beam, argc == 3 ? argv[1] : Compositor.path},
+          std::pair{GateKind::Input, argc == 3 ? argv[2] : SteamWebHelper.path}}) {
+        try {
+            ct::steamvr::resolve_gate_layout(kind, ct::read_file(path, 32 * 1024 * 1024));
+        } catch (const std::exception &error) {
+            std::cerr << path << ": " << error.what() << '\n';
+            return kind == GateKind::Input ? 3 : 1;
         }
-        return 0;
-    } catch (const std::exception &error) {
-        std::cerr << error.what() << '\n';
-        return 1;
     }
+    return 0;
 }
