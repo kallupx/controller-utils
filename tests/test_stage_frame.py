@@ -127,7 +127,7 @@ class FramePackageTest(unittest.TestCase):
         self.assertIn("Running 20261029.6150930", output.getvalue())
         self.assertIn("Frame stable package preflight passed", output.getvalue())
 
-    def test_setup_only_skips_the_unsupported_menu_features(self):
+    def test_setup_only_requires_the_supported_native_sockets(self):
         main = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["main"]
         for code, gates in [
             (0, ("input", "beam")),
@@ -159,15 +159,11 @@ class FramePackageTest(unittest.TestCase):
                 patch("platform.machine", return_value="aarch64"),
                 patch.object(Path, "read_text", return_value="BUILD_ID=test\n"),
                 patch("subprocess.run") as palm,
-                contextlib.redirect_stderr(io.StringIO()) as notice,
             ):
                 if gates is not None:
                     main()
                     self.assertEqual(
                         install.call_args.args[1:], ("calibration", True, False, gates)
-                    )
-                    self.assertEqual(
-                        "menu pointer unavailable" in notice.getvalue(), "input" not in gates
                     )
                     palm.assert_called_once()
                 else:

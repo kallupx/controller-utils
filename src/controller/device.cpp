@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <sys/ioctl.h>
+#include <sys/socket.h>
 #include <fcntl.h>
 
 namespace ct {
@@ -59,7 +60,8 @@ std::filesystem::path LinuxHidTransport::discover(ControllerConnection connectio
                                  (connection == ControllerConnection::Puck ? "puck" : "bluetooth"));
     return candidates.front();
 }
-LinuxHidTransport::LinuxHidTransport(ControllerConnection connection) {
+LinuxHidTransport::LinuxHidTransport(ControllerConnection connection)
+    : bluetooth_(connection == ControllerConnection::Bluetooth) {
     const auto path = discover(connection);
     descriptor_.reset(open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
     if (!descriptor_)
@@ -91,17 +93,33 @@ std::array<uint8_t, 64> LinuxHidTransport::feature() {
 std::optional<std::vector<uint8_t>> LinuxHidTransport::receive(double timeout) {
     if (!std::isfinite(timeout) || timeout < 0 || timeout > 60)
         throw std::invalid_argument("invalid controller read timeout");
-    pollfd pending{descriptor_.get(), POLLIN, 0};
+    pollfd pending[] = {{descriptor_.get(), POLLIN, 0}, {menu_.socket.get(), POLLIN, 0}};
     int ready;
     const auto deadline = monotonic_time() + timeout;
     do {
-        ready = poll(&pending, 1, int(std::ceil(std::max(0., deadline - monotonic_time()) * 1000)));
+        ready = poll(pending, menu_.socket ? 2 : 1,
+                     int(std::ceil(std::max(0., deadline - monotonic_time()) * 1000)));
     } while (ready < 0 && errno == EINTR);
     if (ready < 0)
         throw std::system_error(errno, std::generic_category(), "controller read readiness");
     if (!ready)
         return {};
     std::vector<uint8_t> packet(64);
+    if (menu_.socket && pending[1].revents && !pending[0].revents) {
+        // The characteristic carries the HID payload without its report ID.
+        const auto n = recv(menu_.socket.get(), packet.data() + 1, packet.size() - 1,
+                            MSG_DONTWAIT | MSG_TRUNC);
+        if (n == 45 || (n == 53 && menu_.id == 0x45)) {
+            packet[0] = menu_.id;
+            packet.resize(size_t(n) + 1);
+            return packet;
+        }
+        if (n < 0 && (errno == EAGAIN || errno == EINTR))
+            return {};
+        menu_reports(false);
+        menu_retry_ = monotonic_time() + 1;
+        return {};
+    }
     const auto count = ::read(descriptor_.get(), packet.data(), packet.size());
     if (count < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -111,6 +129,17 @@ std::optional<std::vector<uint8_t>> LinuxHidTransport::receive(double timeout) {
     if (!count)
         throw std::system_error(ENODEV, std::generic_category(), "controller disconnected");
     packet.resize(size_t(count));
+    if (packet[0] == 0x42 || packet[0] == 0x45 || packet[0] == 0x47) {
+        // The Bluetooth equivalent of the full 0x42 report uses the same 32-bit sensor clock.
+        hid_report_ = packet[0] == 0x42 ? 0x45 : packet[0];
+        if (menu_.socket) {
+            // One old HID report can be queued when Bluetooth switches streams.
+            if (monotonic_time() - menu_started_ < .08)
+                return {};
+            menu_reports(false);
+            menu_retry_ = monotonic_time() + 1;
+        }
+    }
     return packet;
 }
 double LinuxHidTransport::now() {
@@ -119,7 +148,22 @@ double LinuxHidTransport::now() {
 void LinuxHidTransport::wait(double seconds) {
     sleep_for(seconds);
 }
+bool LinuxHidTransport::menu_reports(bool enabled) {
+    if (!enabled) {
+        menu_.socket.reset();
+        menu_.bus.reset();
+        return false;
+    }
+    const double now = monotonic_time();
+    if (!menu_.socket && bluetooth_ && hid_report_ && now >= menu_retry_) {
+        menu_ = acquire_bluetooth_reports(descriptor_.get(), hid_report_);
+        menu_started_ = monotonic_time();
+        menu_retry_ = menu_started_ + (menu_.socket ? 0 : 1);
+    }
+    return bool(menu_.socket);
+}
 void LinuxHidTransport::close() noexcept {
+    menu_reports(false);
     descriptor_.reset();
 }
 

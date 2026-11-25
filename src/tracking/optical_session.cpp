@@ -1,4 +1,5 @@
 #include "optical_session.h"
+#include "interaction/gestures.h"
 #include "platform/linux/resource.h"
 #include <algorithm>
 #include <iostream>
@@ -8,13 +9,21 @@ namespace {
 double optical_smoothing(const Settings &settings) {
     return settings.smoothing_ms / 500.;
 }
-FileDescriptor connect_gate(const char *channel) {
+FileDescriptor connect_gate(const char *channel, bool *no_listener = nullptr) {
     FileDescriptor gate(socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
     sockaddr_un address{};
     const auto length = optical::address(address, channel);
-    if (!gate || connect(gate.get(), reinterpret_cast<sockaddr *>(&address), length) ||
-        !optical::same_user(gate.get()))
-        gate.reset();
+    if (no_listener)
+        *no_listener = false;
+    if (!gate)
+        return {};
+    if (connect(gate.get(), reinterpret_cast<sockaddr *>(&address), length)) {
+        if (no_listener)
+            *no_listener = errno == ECONNREFUSED;
+        return {};
+    }
+    if (!optical::same_user(gate.get()))
+        return {};
     return gate;
 }
 } // namespace
@@ -102,7 +111,14 @@ void OpticalSession::controls(const std::optional<ControllerInput> &report, bool
     input.enabled = enabled;
     input.typing = typing;
     if (report && (!input.received || report->received > *input.received)) {
-        auto controls = input_controls(report->report);
+        const auto &state = report->report;
+        auto controls = input_controls(state);
+        // Leave Steam with released controls before the controller switches streams.
+        input.gamepad_neutral = !(state.buttons & ButtonMask) && !controls.pad_touch &&
+                                !controls.scroll_touch && controls.trigger < .1 &&
+                                controls.grip < .1 &&
+                                std::hypot(state.left_stick[0], state.left_stick[1]) < .2 &&
+                                std::hypot(state.right_stick[0], state.right_stick[1]) < .2;
         const auto previous = input.received && report->received - *input.received <= .15
                                   ? input.input.value_or(InputControls{})
                                   : InputControls{};
@@ -513,17 +529,22 @@ std::optional<BodyPoseMessage> OpticalSession::step(const std::vector<Controller
         result = last_valid_pose;
     const bool wanted = result && input.enabled && input.received && mono - *input.received < .15;
     bool claim = wanted && filter && mono >= filter_retry;
-    if (claim && !input_gate) {
-        input_gate = connect_gate("input");
-        if (!input_gate) {
-            filter_retry = mono + .75;
-            claim = false;
-        }
+    if (claim && !input.native_active && !input_gate && mono >= gate_retry) {
+        input_gate = connect_gate("input", &input_gate_absent);
+        gate_retry = input_gate ? 0 : mono + .75;
+        input_gate_seen |= bool(input_gate);
     }
+    // Steam clients without the native input gate need the controller’s dedicated Bluetooth stream.
+    const bool bluetooth_menu = input_gate_absent && !input_gate_seen;
+    claim = claim && (input_gate || (bluetooth_menu && !(input.buttons & 0x10010)));
     const bool filtered = claim && input.filter_active && input.filter_confirmed &&
                           mono - *input.filter_confirmed < .75;
     const bool was_active = input.native_active;
-    input.native_active = filtered && confirm_input_gate(input.filter_index.value_or(-1), mono);
+    const bool bluetooth_active =
+        device->menu_reports(filtered && bluetooth_menu && (was_active || input.gamepad_neutral));
+    input.native_active =
+        filtered && (bluetooth_menu ? bluetooth_active
+                                    : confirm_input_gate(input.filter_index.value_or(-1), mono));
     if (claim && !input.native_active &&
         (was_active || (input.filter_requested && mono - filter_attempt >= .45))) {
         filter_retry = mono + .75;
@@ -576,8 +597,10 @@ std::optional<BodyPoseMessage> OpticalSession::step(const std::vector<Controller
             filter_retry = mono + .75;
         }
     }
-    if (!input.native_active)
+    if (!input.native_active) {
+        device->menu_reports(false);
         input.activation_confirmed = false;
+    }
     if (now - sent >= .009 && input.native_active && !input.activation_confirmed) {
         const auto index = runtime.primary_dashboard_device();
         input.activation_confirmed =
@@ -651,6 +674,7 @@ void OpticalSession::close() {
     if (closed)
         return;
     closed = true;
+    device->menu_reports(false);
     driver.reset();
     input_gate.reset();
     beam_gate.reset();
