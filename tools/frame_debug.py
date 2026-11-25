@@ -106,6 +106,10 @@ def xr_events(path):
             event = f"registered cameras={match[1]}"
         elif match := re.search(r"ISP (enabled|disabled) for tracking cameras", line):
             event = f"tracking camera ISP={match[1]}"
+        elif match := re.search(r"Setting up cameras camerasToUse: ([01]{4})\b", line):
+            event = f"tracking camera mask={match[1]}"
+        elif match := re.search(r"Set upper camera driver (not in-sync|in-sync)\b", line):
+            event = f"upper cameras {match[1]}"
         elif match := re.search(
             r"Received passthrough camera connection event \(connected=([01])\)", line
         ):
