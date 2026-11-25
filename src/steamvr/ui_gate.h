@@ -1,11 +1,15 @@
 #pragma once
 #include "platform/linux/process.h"
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace ct::steamvr {
 using Bytes = std::vector<uint8_t>;
 enum class GateKind { Input, Beam };
+struct UnsupportedBeamLayout : std::runtime_error {
+    UnsupportedBeamLayout() : std::runtime_error("native beam method signature mismatch") {}
+};
 struct GateLayout {
     GateKind kind;
     uintptr_t site, cave;
