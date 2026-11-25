@@ -57,7 +57,7 @@ build/native/src/steamvr/steam_ui_transport.o build/sanitize/src/steamvr/steam_u
 
 -include $(OBJECTS:.o=.d) $(SANITIZE_OBJECTS:.o=.d) build/native/src/ui/renderer.d build/sanitize/src/ui/renderer.d
 
-build/fake_openvr.so: tests/fake_openvr_library.cpp tests/fake_openvr_interfaces.h tests/fake_openvr_overlay.h third_party/openvr/openvr.h
+build/fake_openvr.so: tests/fake_openvr_library.cpp tests/fake_openvr_interfaces.h tests/fake_openvr_overlay.h third_party/openvr/openvr.h third_party/openvr/ivrmailbox_001.h
 	mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -Wno-unused-parameter -fPIC -shared $< -o $@
 

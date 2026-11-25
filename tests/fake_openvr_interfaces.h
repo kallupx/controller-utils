@@ -346,7 +346,7 @@ struct Applications : IVRApplications {
         return {};
     }
     uint32_t GetCurrentSceneProcessId() override {
-        return {};
+        return std::getenv("CT_TEST_OPENVR_SCENE") ? 42 : 0;
     }
 };
 } // namespace ct_test
