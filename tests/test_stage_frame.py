@@ -24,6 +24,25 @@ def arm64_file(path):
 
 
 class FramePackageTest(unittest.TestCase):
+    def test_service_start_retries_a_pending_stop_and_reports_a_failed_unit(self):
+        start = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["start_service"]
+        refused = subprocess.CompletedProcess(["systemctl"], 4, "", "Start refused")
+        inactive = subprocess.CompletedProcess(["systemctl"], 0, "inactive", "")
+        success = subprocess.CompletedProcess(["systemctl"], 0, "", "")
+        with (
+            patch.dict(start.__globals__, systemctl=Mock(side_effect=[refused, inactive, success])),
+            patch("time.sleep"),
+        ):
+            start("steamvr.service")
+        failed = subprocess.CompletedProcess(["systemctl"], 0, "failed", "")
+        with (
+            patch.dict(start.__globals__, systemctl=Mock(side_effect=[refused, failed])),
+            contextlib.redirect_stderr(io.StringIO()) as notice,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            start("steamvr.service")
+        self.assertIn("Start refused", notice.getvalue())
+
     def test_setup_requires_camera_socket_unless_kernel_devices_are_missing(self):
         ready = runpy.run_path(str(ROOT / "packaging/frame_install.py"))["ready"]
         drivers = [

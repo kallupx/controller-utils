@@ -154,18 +154,24 @@ def calibration(source, package=None):
 
 
 def start_service(unit):
-    result = systemctl("start", unit, check=False)
-    if result.returncode == 0:
-        return
+    result = systemctl("start", unit, check=False, capture=True)
     deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
+    while result.returncode and time.monotonic() < deadline:
         state = systemctl("show", unit, "-p", "ActiveState", "--value", capture=True).stdout.strip()
         if state == "active":
             return
-        if state != "activating":
+        if state == "activating":
+            time.sleep(0.2)
+            continue
+        # An irreversible stop on a dependency can still block this start (systemctl exit 4).
+        if result.returncode != 4 or state not in ("inactive", "deactivating"):
             break
         time.sleep(0.2)
-    result.check_returncode()
+        result = systemctl("start", unit, check=False, capture=True)
+    if result.returncode:
+        if result.stderr:
+            print(result.stderr.rstrip(), file=sys.stderr)
+        result.check_returncode()
 
 
 def start_services():
